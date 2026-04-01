@@ -1,26 +1,22 @@
 import { useGameStore } from '@/store/gameStore';
 import type { PlayerId } from '@/types/game.types';
 
-/**
- * Custom hook exposing only game actions (no state).
- * Follows single-responsibility: separates reading from writing.
- */
 export function useGameActions() {
-  const playCard = useGameStore((s) => s.playCard);
-  const moveCard = useGameStore((s) => s.moveCard);
-  const selectCard = useGameStore((s) => s.selectCard);
-  const tapCard = useGameStore((s) => s.tapCard);
-  const drawCard = useGameStore((s) => s.drawCard);
-  const advancePhase = useGameStore((s) => s.advancePhase);
-  const endTurn = useGameStore((s) => s.endTurn);
-  const resetGame = useGameStore((s) => s.resetGame);
-  const addLog = useGameStore((s) => s.addLog);
-  const equipWeapon = useGameStore((s) => s.equipWeapon);
-  const unequipWeapon = useGameStore((s) => s.unequipWeapon);
+  const playCard      = useGameStore((s) => s.playCard);
+  const equipWeapon   = useGameStore((s) => s.equipWeapon);
+  const attackWithAlly = useGameStore((s) => s.attackWithAlly);
+  const selectCard    = useGameStore((s) => s.selectCard);
+  const tapCard       = useGameStore((s) => s.tapCard);
+  const drawCard      = useGameStore((s) => s.drawCard);
+  const advancePhase  = useGameStore((s) => s.advancePhase);
+  const endTurn       = useGameStore((s) => s.endTurn);
+  const resetGame     = useGameStore((s) => s.resetGame);
+  const addLog        = useGameStore((s) => s.addLog);
 
   return {
     playCard,
-    moveCard,
+    equipWeapon,
+    attackWithAlly,
     selectCard,
     tapCard,
     drawForPlayer: (id: PlayerId) => drawCard(id),
@@ -28,7 +24,5 @@ export function useGameActions() {
     endPlayerTurn: () => endTurn(),
     resetGame,
     addLog,
-    equipWeapon,
-    unequipWeapon,
   };
 }

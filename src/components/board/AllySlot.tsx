@@ -14,75 +14,52 @@ interface AllySlotProps {
   isOpponent?: boolean;
 }
 
-/** Calculates the effective force of an ally considering equipped weapon */
-function getEffectiveForce(ally: CardInPlay, weapon?: CardInPlay): number {
-  return ally.fuerza + (weapon?.bonusFuerza ?? 0);
-}
-
 export function AllySlot({ ally, weapon, playerId, isOpponent = false }: AllySlotProps) {
   const [detailCard, setDetailCard] = useState<CardInPlay | null>(null);
-  const [isWeaponDropOver, setIsWeaponDropOver] = useState(false);
-  const { equipWeapon } = useGameActions();
-  const turn = useGameStore(s => s.turn);
-  const player = useGameStore(s => s.players[playerId]);
+  const [isWeaponOver, setIsWeaponOver] = useState(false);
+  const { equipWeapon, attackWithAlly } = useGameActions();
+  const turn   = useGameStore((s) => s.turn);
+  const player = useGameStore((s) => s.players[playerId]);
 
-  const effectiveForce = getEffectiveForce(ally, weapon);
-  // Create a display version of ally with effective force for CardView
-  const allyDisplay: CardInPlay = { ...ally, fuerza: effectiveForce };
+  const effectiveForce = ally.fuerza + (weapon?.bonusFuerza ?? 0);
+  const displayAlly: CardInPlay = { ...ally, fuerza: effectiveForce };
+
+  const isMyTurn = turn.currentPlayer === playerId && !isOpponent;
+
+  const handleWeaponDragOver = (e: React.DragEvent) => {
+    if (!isMyTurn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    setIsWeaponOver(true);
+  };
+
+  const handleWeaponDrop = (e: React.DragEvent) => {
+    if (!isMyTurn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsWeaponOver(false);
+
+    try {
+      const { card, sourceZone, sourcePlayer } = JSON.parse(
+        e.dataTransfer.getData('application/json')
+      ) as { card: CardInPlay; sourceZone: string; sourcePlayer: PlayerId };
+
+      if (card.tipo === 'arma' && sourceZone === 'hand' && sourcePlayer === playerId) {
+        if (turn.currentPlayer !== playerId) {
+          useGameStore.getState().addLog('No es tu turno.', 'error');
+          return;
+        }
+        equipWeapon(card, ally.instanceId, playerId);
+      }
+    } catch { /* noop */ }
+  };
 
   const handleAllyDragStart = (e: React.DragEvent, card: CardInPlay) => {
     e.dataTransfer.setData(
       'application/json',
-      JSON.stringify({ card, sourceZone: 'field', sourcePlayer: playerId })
+      JSON.stringify({ card, sourceZone: 'defense', sourcePlayer: playerId })
     );
-  };
-
-  // Allow weapon cards to be dropped onto this slot
-  const handleWeaponDragOver = (e: React.DragEvent) => {
-    if (isOpponent) return;
-    try {
-      // We can't read dataTransfer during dragOver, so just allow it
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      setIsWeaponDropOver(true);
-    } catch { /* noop */ }
-  };
-
-  const handleWeaponDragLeave = () => setIsWeaponDropOver(false);
-
-  const handleWeaponDrop = (e: React.DragEvent) => {
-    if (isOpponent) return;
-    e.preventDefault();
-    e.stopPropagation();
-    setIsWeaponDropOver(false);
-
-    try {
-      const payload = JSON.parse(e.dataTransfer.getData('application/json')) as {
-        card: CardInPlay;
-        sourceZone: string;
-        sourcePlayer: PlayerId;
-      };
-
-      if (
-        payload.card.tipo === 'arma' &&
-        payload.sourceZone === 'hand' &&
-        payload.sourcePlayer === playerId
-      ) {
-        // Check if player has enough gold
-        if (payload.card.coste > player.goldCount) {
-          useGameStore.getState().addLog(
-            `Necesitas ${payload.card.coste} de oro para equipar ${payload.card.nombre}`,
-            'error'
-          );
-          return;
-        }
-        if (turn.currentPlayer !== playerId) {
-          useGameStore.getState().addLog('Solo puedes equipar armas en tu turno.', 'error');
-          return;
-        }
-        equipWeapon(payload.card, ally.instanceId, playerId);
-      }
-    } catch { /* noop */ }
   };
 
   return (
@@ -90,79 +67,76 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false }: AllySlo
       <div
         className={[
           'relative flex flex-col items-center transition-all duration-150',
-          isWeaponDropOver && !isOpponent ? 'scale-105' : '',
+          isWeaponOver ? 'scale-105' : '',
         ].join(' ')}
-        style={{ width: 56, minHeight: weapon ? 108 : 80 }}
+        style={{ width: 56, minHeight: weapon ? 112 : 84 }}
         onDragOver={handleWeaponDragOver}
-        onDragLeave={handleWeaponDragLeave}
+        onDragLeave={() => setIsWeaponOver(false)}
         onDrop={handleWeaponDrop}
+        onDoubleClick={() => isMyTurn && attackWithAlly(ally.instanceId, playerId)}
+        title={isMyTurn ? 'Doble clic para atacar' : undefined}
       >
-        {/* Weapon drop hint */}
-        {isWeaponDropOver && (
-          <div className="absolute inset-0 rounded-lg border-2 border-dashed border-red-400/60 bg-red-400/5 z-20 pointer-events-none flex items-end justify-center pb-1">
-            <Sword size={12} className="text-red-400" />
-          </div>
+        {/* Weapon drop highlight */}
+        {isWeaponOver && (
+          <div className="absolute inset-0 rounded-lg border-2 border-dashed border-red-400/60 bg-red-500/5 z-20 pointer-events-none" />
         )}
 
         {/* Ally card */}
         <div className="relative z-10">
           <CardView
-            card={allyDisplay}
+            card={displayAlly}
             onClick={() => setDetailCard(ally)}
             draggable={!isOpponent}
             onDragStart={handleAllyDragStart}
             isOpponent={isOpponent}
           />
-          {/* Force bonus indicator */}
+
+          {/* Weapon bonus badge */}
           {weapon && (weapon.bonusFuerza ?? 0) > 0 && (
-            <div className="absolute -top-1 -right-1 z-20 bg-red-600 text-white text-[8px] font-bold rounded-full w-4 h-4 flex items-center justify-center shadow">
+            <div className="absolute -top-1 -right-1 z-20 bg-red-600 text-white text-[7px] font-bold rounded-full w-4 h-4 flex items-center justify-center shadow">
               +{weapon.bonusFuerza}
+            </div>
+          )}
+
+          {/* Attack hint */}
+          {isMyTurn && (
+            <div className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 text-[6px] text-slate-600 whitespace-nowrap">
+              2x clic = atacar
             </div>
           )}
         </div>
 
-        {/* Weapon card (overlapping, partially visible below ally) */}
+        {/* Weapon overlapping below */}
         {weapon && (
           <div
-            className="relative z-0"
-            style={{ marginTop: -28 }} // overlap the bottom of the ally
+            className="relative z-0 cursor-pointer"
+            style={{ marginTop: -28 }}
+            onClick={() => setDetailCard(weapon)}
+            title={`${weapon.nombre} (+${weapon.bonusFuerza ?? 0} ⚔)`}
           >
-            <div
-              className="relative cursor-pointer"
-              onClick={() => setDetailCard(weapon)}
-              title={`${weapon.nombre} — +${weapon.bonusFuerza ?? 0} de fuerza`}
-            >
-              <CardView
-                card={weapon}
-                compact
-                isOpponent={isOpponent}
-              />
-              {/* Weapon label strip */}
-              <div className="absolute bottom-0 left-0 right-0 bg-red-900/80 text-[7px] text-red-200 text-center py-0.5 rounded-b">
-                {weapon.nombre}
-              </div>
+            <CardView card={weapon} compact isOpponent={isOpponent} />
+            <div className="absolute bottom-0 left-0 right-0 bg-red-900/80 text-[6px] text-red-200 text-center py-0.5 rounded-b truncate px-0.5">
+              {weapon.nombre}
             </div>
           </div>
         )}
 
-        {/* Drop zone label when empty and hovering */}
-        {!weapon && !isOpponent && (
-          <div
-            className={[
-              'text-[8px] text-slate-700 text-center leading-tight mt-0.5 transition-opacity',
-              isWeaponDropOver ? 'opacity-0' : 'opacity-100',
-            ].join(' ')}
-          >
-            <Sword size={9} className="inline opacity-30" />
+        {/* Empty weapon slot hint */}
+        {!weapon && isMyTurn && (
+          <div className="mt-0.5">
+            <Sword size={8} className="text-slate-800 mx-auto" />
           </div>
         )}
       </div>
 
-      {/* Card detail modal */}
       <CardDetail
         card={detailCard}
         isOpen={!!detailCard}
         onClose={() => setDetailCard(null)}
+        onPlay={!isOpponent && detailCard?.tipo === 'arma'
+          ? (c) => equipWeapon(c, ally.instanceId, playerId)
+          : undefined}
+        canPlay={detailCard ? player.goldCount >= detailCard.coste : false}
       />
     </>
   );

@@ -2,43 +2,50 @@ import type { Card, CardInPlay } from './card.types';
 
 export type ZoneId =
   | 'hand'
-  | 'field'
-  | 'deck'
-  | 'graveyard'
-  | 'gold'
-  | 'talisman';
+  | 'defense'      // Línea de Defensa (aliados en posición defensiva)
+  | 'attack'       // Línea de Ataque (aliados que atacaron este turno)
+  | 'support'      // Línea de Apoyo (tótems y tierras)
+  | 'deck'         // M — Mazo Castillo
+  | 'graveyard'    // + — Cementerio
+  | 'goldPaid'     // P — Zona de oro pagado
+  | 'removed'      // R — Cartas removidas
+  | 'gold'         // O — Zona de oros disponibles
+  | 'exile';       // D — Destierro
 
-export type TurnPhase =
-  | 'draw'
-  | 'main'
-  | 'combat'
-  | 'end';
+export type TurnPhase = 'draw' | 'main' | 'combat' | 'end';
 
 export type PlayerId = 'player' | 'opponent';
-
-export interface Zone {
-  id: ZoneId;
-  cards: CardInPlay[];
-  maxCards?: number;
-  label: string;
-}
 
 export interface PlayerState {
   id: PlayerId;
   name: string;
-  /** Mazo Castillo */
-  deck: Card[];
+
+  // ── Zonas de carta ─────────────────────────────────────────────────────
+  deck: Card[];                // M — Mazo Castillo
   hand: CardInPlay[];
-  /** Solo cartas de tipo 'aliado' y 'tierra' van al campo */
-  field: CardInPlay[];
-  graveyard: CardInPlay[];
+
+  /** Línea de Defensa: aliados recién jugados y que no atacaron */
+  defenseField: CardInPlay[];
+  /** Línea de Ataque: aliados que atacaron este turno (quedan sitiados) */
+  attackField: CardInPlay[];
+  /** Línea de Apoyo: tótems y tierras permanentes */
+  supportField: CardInPlay[];
+
+  /** O — Oros disponibles (cartas de tipo oro jugadas) */
   gold: CardInPlay[];
-  talisman: CardInPlay | null;
-  /**
-   * Armas equipadas a aliados.
-   * Clave = instanceId del aliado, valor = carta de arma equipada.
-   */
+  /** P — Oros que ya fueron pagados/gastados este turno */
+  goldPaid: CardInPlay[];
+  /** + — Cementerio */
+  graveyard: CardInPlay[];
+  /** R — Cartas removidas del juego */
+  removed: CardInPlay[];
+  /** D — Destierro */
+  exile: CardInPlay[];
+
+  /** Armas equipadas: key = instanceId del aliado, value = arma */
   equippedWeapons: Record<string, CardInPlay>;
+
+  // ── Estado del jugador ─────────────────────────────────────────────────
   life: number;
   goldCount: number;
   drawnThisTurn: boolean;
@@ -58,7 +65,6 @@ export interface GameState {
   isGameOver: boolean;
   winner: PlayerId | null;
   gameLog: GameLogEntry[];
-  /** Controla si el tablero está en animación de rotación */
   isBoardRotating: boolean;
 }
 
@@ -73,6 +79,5 @@ export interface DragPayload {
   card: CardInPlay;
   sourceZone: ZoneId;
   sourcePlayer: PlayerId;
-  /** instanceId del aliado al que se está equipando (para armas) */
   targetAllyInstanceId?: string;
 }
