@@ -12,7 +12,14 @@ import { APP_VERSION } from '@/version';
 const EASE_IN: Easing  = 'easeIn';
 const EASE_OUT: Easing = 'easeOut';
 
-const PHASE_SEQUENCE = ['draw', 'main', 'combat', 'end'] as const;
+const PHASE_SEQUENCE = ['agrupacion', 'vigilia', 'batalla', 'final'] as const;
+
+const PHASE_LABELS: Record<string, string> = {
+  agrupacion: 'Agrupación',
+  vigilia:    'Vigilia',
+  batalla:    'Batalla Mitológica',
+  final:      'Fase Final',
+};
 
 export function GameBoard() {
   const players    = useGameStore((s) => s.players);
@@ -85,7 +92,7 @@ export function GameBoard() {
                   : 'text-slate-600',
               ].join(' ')}
             >
-              {phase === 'draw' ? 'Robar' : phase === 'main' ? 'Principal' : phase === 'combat' ? 'Combate' : 'Final'}
+              {PHASE_LABELS[phase] ?? phase}
             </div>
           ))}
         </div>
