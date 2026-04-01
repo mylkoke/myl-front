@@ -14,11 +14,12 @@ interface CardViewProps {
 }
 
 const TYPE_COLORS: Record<string, string> = {
-  criatura: 'from-blue-900 to-slate-900 border-blue-600/50',
-  talisman: 'from-purple-900 to-slate-900 border-purple-600/50',
-  arma: 'from-red-900 to-slate-900 border-red-600/50',
-  tierra: 'from-green-900 to-slate-900 border-green-600/50',
-  oro: 'from-yellow-900 to-slate-900 border-yellow-600/50',
+  aliado:  'from-blue-900 to-slate-900 border-blue-600/50',
+  talisman:'from-purple-900 to-slate-900 border-purple-600/50',
+  arma:    'from-red-900 to-slate-900 border-red-600/50',
+  tierra:  'from-green-900 to-slate-900 border-green-600/50',
+  totem:   'from-emerald-900 to-slate-900 border-emerald-600/50',
+  oro:     'from-yellow-800 to-yellow-950 border-yellow-500/70',
 };
 
 const SEAL_BADGE: Record<string, { label: string; variant: 'gold' | 'blue' | 'purple' }> = {
@@ -83,10 +84,17 @@ export function CardView({
         .filter(Boolean)
         .join(' ')}
     >
-      {/* Cost badge */}
-      {!compact && (
+      {/* Cost badge — oculto en cartas de oro (no tienen coste) */}
+      {!compact && card.tipo !== 'oro' && (
         <div className="absolute top-1 left-1 w-5 h-5 rounded-full bg-yellow-500 flex items-center justify-center text-[10px] font-bold text-black shadow">
           {card.coste}
+        </div>
+      )}
+
+      {/* Gold card marker — moneda en lugar del badge de coste */}
+      {!compact && card.tipo === 'oro' && (
+        <div className="absolute top-1 left-1 w-5 h-5 rounded-full bg-yellow-400 flex items-center justify-center text-[10px] shadow border border-yellow-300">
+          ✦
         </div>
       )}
 
