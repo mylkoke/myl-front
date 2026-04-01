@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { Sword, BookOpen, Trophy } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { APP_VERSION } from '@/version';
 
 export function LobbyPage() {
   const navigate = useNavigate();
@@ -67,6 +68,9 @@ export function LobbyPage() {
       {/* Footer */}
       <div className="absolute bottom-4 text-slate-700 text-xs text-center">
         MVP Frontend — Fase 1 · Hijos de Daana
+        <span className="absolute bottom-4 right-4 text-slate-700 text-xs font-mono select-none">
+          v{APP_VERSION}
+        </span>
       </div>
     </div>
   );

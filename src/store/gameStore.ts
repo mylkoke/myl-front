@@ -4,22 +4,13 @@ import type { GameState, PlayerState, TurnPhase, PlayerId } from '@/types/game.t
 import type { CardInPlay, Card } from '@/types/card.types';
 import { createCardInPlay, createCardsInPlay } from '@/utils/cardFactory';
 import { shuffleDeck, drawCards } from '@/utils/deckUtils';
-import {
-  INITIAL_LIFE,
-  INITIAL_HAND_SIZE,
-  canPlayCard,
-  checkGameOver,
-} from '@/utils/gameRules';
+import { INITIAL_LIFE, INITIAL_HAND_SIZE, canPlayCard, checkGameOver } from '@/utils/gameRules';
 import { createLogEntry } from '@/utils/gameLog';
 import { STARTING_DECK_PLAYER, STARTING_DECK_OPPONENT } from '@/data/mockCards';
 
-// ─── Initial player factory ──────────────────────────────────────────────────
+// ─── Builder ──────────────────────────────────────────────────────────────────
 
-function buildInitialPlayer(
-  id: PlayerId,
-  name: string,
-  rawDeck: Card[]
-): PlayerState {
+function buildInitialPlayer(id: PlayerId, name: string, rawDeck: Card[]): PlayerState {
   const shuffled = shuffleDeck(rawDeck);
   const { drawn, remaining } = drawCards(shuffled, INITIAL_HAND_SIZE);
   return {
@@ -27,11 +18,15 @@ function buildInitialPlayer(
     name,
     deck: remaining,
     hand: createCardsInPlay(drawn),
-    field: [],
-    graveyard: [],
+    defenseField: [],
+    attackField: [],
+    supportField: [],
     gold: [],
-    talisman: null,
-    weapon: null,
+    goldPaid: [],
+    graveyard: [],
+    removed: [],
+    exile: [],
+    equippedWeapons: {},
     life: INITIAL_LIFE,
     goldCount: 0,
     drawnThisTurn: false,
@@ -53,77 +48,71 @@ function buildInitialState(): GameState {
     selectedCard: null,
     isGameOver: false,
     winner: null,
-    gameLog: [createLogEntry('¡Partida iniciada! Es el turno del Jugador.', 'system')],
+    isBoardRotating: false,
+    gameLog: [createLogEntry('¡Partida iniciada! Turno del Jugador — Fase Principal.', 'system')],
   };
 }
 
-// ─── Store interface ──────────────────────────────────────────────────────────
+// ─── Actions interface ────────────────────────────────────────────────────────
+
+type GameLogEntry = import('@/types/game.types').GameLogEntry;
 
 interface GameActions {
-  // Card actions
   playCard: (card: CardInPlay, playerId: PlayerId) => void;
-  moveCard: (card: CardInPlay, fromZone: string, toZone: string, playerId: PlayerId) => void;
+  equipWeapon: (weapon: CardInPlay, allyInstanceId: string, playerId: PlayerId) => void;
+  attackWithAlly: (allyInstanceId: string, playerId: PlayerId) => void;
   selectCard: (card: CardInPlay | null) => void;
   tapCard: (instanceId: string, playerId: PlayerId) => void;
-
-  // Turn actions
   drawCard: (playerId: PlayerId) => void;
   advancePhase: () => void;
   endTurn: () => void;
-
-  // Game lifecycle
+  setBoardRotating: (v: boolean) => void;
   initGame: () => void;
   resetGame: () => void;
-  addLog: (message: string, type?: GameLogEntry['type']) => void;
+  addLog: (msg: string, type?: GameLogEntry['type']) => void;
 }
 
-type GameLogEntry = import('@/types/game.types').GameLogEntry;
 type GameStore = GameState & GameActions;
 
-// ─── Zustand store ────────────────────────────────────────────────────────────
+// ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useGameStore = create<GameStore>()(
   devtools(
     (set, get) => ({
       ...buildInitialState(),
 
-      // ── Select a card (for detail view / targeting) ──
       selectCard: (card) => set({ selectedCard: card }),
+      setBoardRotating: (v) => set({ isBoardRotating: v }),
 
-      // ── Draw a card from deck to hand ──
+      // ── Draw from Mazo Castillo ───────────────────────────────────────────
       drawCard: (playerId) => {
-        const { players, turn } = get();
+        const { players } = get();
         const player = players[playerId];
 
         if (player.deck.length === 0) {
-          get().addLog(`${player.name} no tiene más cartas en el mazo!`, 'system');
-          return;
-        }
-
-        if (player.drawnThisTurn && turn.phase !== 'draw') {
-          get().addLog('Ya robaste una carta este turno', 'error');
+          get().addLog(`${player.name}: ¡Mazo Castillo vacío!`, 'system');
           return;
         }
 
         const { drawn, remaining } = drawCards(player.deck, 1);
         const newCard = createCardInPlay(drawn[0]);
 
-        set((state) => ({
+        set((s) => ({
           players: {
-            ...state.players,
+            ...s.players,
             [playerId]: {
-              ...player,
+              ...s.players[playerId],
               deck: remaining,
-              hand: [...player.hand, newCard],
+              hand: [...s.players[playerId].hand, newCard],
               drawnThisTurn: true,
             },
           },
         }));
 
-        get().addLog(`${player.name} robó una carta.`);
+        get().addLog(`${player.name} robó una carta del Mazo Castillo.`);
       },
 
-      // ── Play a card from hand ──
+      // ── Play a card from hand ─────────────────────────────────────────────
       playCard: (card, playerId) => {
         const { players, turn } = get();
         const player = players[playerId];
@@ -134,101 +123,184 @@ export const useGameStore = create<GameStore>()(
           return;
         }
 
-        const newHand = player.hand.filter((c) => c.instanceId !== card.instanceId);
-        let updatedPlayer = { ...player, hand: newHand };
+        const withoutCard = player.hand.filter((c) => c.instanceId !== card.instanceId);
+        let updated = { ...player, hand: withoutCard };
 
-        if (card.tipo === 'oro') {
-          updatedPlayer = {
-            ...updatedPlayer,
-            gold: [...player.gold, { ...card }],
-            goldCount: player.goldCount + 1,
-          };
-          get().addLog(`${player.name} jugó ${card.nombre} (Oro).`, 'action');
-        } else if (card.tipo === 'criatura') {
-          updatedPlayer = {
-            ...updatedPlayer,
-            field: [...player.field, { ...card }],
-            goldCount: player.goldCount - card.coste,
-          };
-          get().addLog(`${player.name} invocó a ${card.nombre} (${card.fuerza} de fuerza).`, 'action');
-        } else if (card.tipo === 'talisman') {
-          updatedPlayer = {
-            ...updatedPlayer,
-            talisman: { ...card },
-            goldCount: player.goldCount - card.coste,
-          };
-          get().addLog(`${player.name} equipó el talismán ${card.nombre}.`, 'action');
-        } else if (card.tipo === 'arma') {
-          updatedPlayer = {
-            ...updatedPlayer,
-            weapon: { ...card },
-            goldCount: player.goldCount - card.coste,
-          };
-          get().addLog(`${player.name} equipó el arma ${card.nombre}.`, 'action');
-        } else if (card.tipo === 'tierra') {
-          updatedPlayer = {
-            ...updatedPlayer,
-            field: [...player.field, { ...card }],
-            goldCount: player.goldCount - card.coste,
-          };
-          get().addLog(`${player.name} jugó la tierra ${card.nombre}.`, 'action');
+        switch (card.tipo) {
+          // Cartas de oro → zona O (oros)
+          case 'oro':
+            updated = {
+              ...updated,
+              gold: [...player.gold, card],
+              goldCount: player.goldCount + 1,
+            };
+            get().addLog(`${player.name} jugó ${card.nombre} (Oro +1).`);
+            break;
+
+          // Aliados → línea de defensa
+          case 'aliado':
+            updated = {
+              ...updated,
+              defenseField: [...player.defenseField, card],
+              goldCount: player.goldCount - card.coste,
+            };
+            get().addLog(`${player.name} invocó a ${card.nombre} (${card.fuerza} ⚔).`);
+            break;
+
+          // Tótems → línea de apoyo (permanente)
+          case 'totem':
+            updated = {
+              ...updated,
+              supportField: [...player.supportField, card],
+              goldCount: player.goldCount - card.coste,
+            };
+            get().addLog(`${player.name} colocó el tótem ${card.nombre} en la línea de apoyo.`);
+            break;
+
+          // Talismanes → efecto inmediato → cementerio
+          case 'talisman':
+            updated = {
+              ...updated,
+              graveyard: [...player.graveyard, card],
+              goldCount: player.goldCount - card.coste,
+            };
+            get().addLog(
+              `${player.name} activó ${card.nombre}: "${card.habilidad}" → va al cementerio.`,
+              'action'
+            );
+            break;
+
+          // Armas → se equipa al primer aliado libre en defensa
+          case 'arma': {
+            const freeAlly = player.defenseField.find(
+              (c) => c.tipo === 'aliado' && !player.equippedWeapons[c.instanceId]
+            );
+            if (!freeAlly) {
+              get().addLog('No hay aliado libre para equipar el arma.', 'error');
+              return;
+            }
+            updated = {
+              ...updated,
+              goldCount: player.goldCount - card.coste,
+              equippedWeapons: {
+                ...player.equippedWeapons,
+                [freeAlly.instanceId]: card,
+              },
+            };
+            get().addLog(
+              `${player.name} equipó ${card.nombre} a ${freeAlly.nombre} (+${card.bonusFuerza ?? 0} ⚔).`
+            );
+            break;
+          }
+
+          // Tierras → línea de apoyo
+          case 'tierra':
+            updated = {
+              ...updated,
+              supportField: [...player.supportField, card],
+              goldCount: player.goldCount - card.coste,
+            };
+            get().addLog(`${player.name} jugó la tierra ${card.nombre}.`);
+            break;
         }
 
-        set((state) => ({
-          players: {
-            ...state.players,
-            [playerId]: updatedPlayer,
-          },
-          turn: {
-            ...state.turn,
-            cardsPlayedThisTurn: state.turn.cardsPlayedThisTurn + 1,
-          },
+        set((s) => ({
+          players: { ...s.players, [playerId]: updated },
+          turn: { ...s.turn, cardsPlayedThisTurn: s.turn.cardsPlayedThisTurn + 1 },
         }));
 
         const { isOver, winnerId } = checkGameOver(get().players);
-        if (isOver) {
-          set({ isGameOver: true, winner: winnerId as PlayerId });
-        }
+        if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
       },
 
-      // ── Move a card between zones (drag and drop handler) ──
-      moveCard: (card, fromZone, toZone, playerId) => {
+      // ── Equip weapon via drag-drop ────────────────────────────────────────
+      equipWeapon: (weapon, allyInstanceId, playerId) => {
         const { players } = get();
         const player = players[playerId];
 
-        // Remove from source zone
-        const removeFrom = (zone: CardInPlay[]) =>
-          zone.filter((c) => c.instanceId !== card.instanceId);
-
-        let updated = { ...player };
-
-        if (fromZone === 'hand') updated = { ...updated, hand: removeFrom(player.hand) };
-        else if (fromZone === 'field') updated = { ...updated, field: removeFrom(player.field) };
-
-        // Add to target zone
-        if (toZone === 'field' && fromZone === 'hand') {
-          get().playCard(card, playerId);
+        if (weapon.coste > player.goldCount) {
+          get().addLog(`Necesitas ${weapon.coste} de oro para equipar ${weapon.nombre}.`, 'error');
           return;
-        } else if (toZone === 'graveyard') {
-          updated = { ...updated, graveyard: [...player.graveyard, { ...card }] };
-          get().addLog(`${card.nombre} fue al cementerio.`, 'action');
-        } else if (toZone === 'hand' && fromZone === 'field') {
-          updated = { ...updated, hand: [...player.hand, { ...card }] };
         }
 
-        set((state) => ({
-          players: { ...state.players, [playerId]: updated },
+        const newHand = player.hand.filter((c) => c.instanceId !== weapon.instanceId);
+        const prevWeapon = player.equippedWeapons[allyInstanceId];
+        const newGraveyard = prevWeapon ? [...player.graveyard, prevWeapon] : player.graveyard;
+        const ally = player.defenseField.find((c) => c.instanceId === allyInstanceId);
+
+        set((s) => ({
+          players: {
+            ...s.players,
+            [playerId]: {
+              ...s.players[playerId],
+              hand: newHand,
+              graveyard: newGraveyard,
+              goldCount: s.players[playerId].goldCount - weapon.coste,
+              equippedWeapons: {
+                ...s.players[playerId].equippedWeapons,
+                [allyInstanceId]: weapon,
+              },
+            },
+          },
+          turn: { ...s.turn, cardsPlayedThisTurn: s.turn.cardsPlayedThisTurn + 1 },
         }));
+
+        get().addLog(
+          `${player.name} equipó ${weapon.nombre} a ${ally?.nombre ?? 'aliado'} (+${weapon.bonusFuerza ?? 0} ⚔).`
+        );
       },
 
-      // ── Tap/untap a card ──
-      tapCard: (instanceId, playerId) => {
-        set((state) => ({
+      // ── Ally attacks → moves to attack line ───────────────────────────────
+      attackWithAlly: (allyInstanceId, playerId) => {
+        const { players, turn } = get();
+        const player = players[playerId];
+
+        if (turn.currentPlayer !== playerId) {
+          get().addLog('No es tu turno.', 'error');
+          return;
+        }
+        if (turn.phase !== 'combat') {
+          get().addLog('Solo puedes atacar en la fase de combate.', 'error');
+          return;
+        }
+
+        const ally = player.defenseField.find((c) => c.instanceId === allyInstanceId);
+        if (!ally) return;
+        if (ally.attackedThisTurn) {
+          get().addLog(`${ally.nombre} ya atacó este turno.`, 'error');
+          return;
+        }
+
+        // Move ally from defense to attack line
+        const newDefense = player.defenseField.filter((c) => c.instanceId !== allyInstanceId);
+        const attackingAlly: CardInPlay = { ...ally, attackedThisTurn: true, tapped: true };
+
+        set((s) => ({
           players: {
-            ...state.players,
+            ...s.players,
             [playerId]: {
-              ...state.players[playerId],
-              field: state.players[playerId].field.map((c) =>
+              ...s.players[playerId],
+              defenseField: newDefense,
+              attackField: [...s.players[playerId].attackField, attackingAlly],
+            },
+          },
+        }));
+
+        const bonus = player.equippedWeapons[allyInstanceId]?.bonusFuerza ?? 0;
+        get().addLog(
+          `${player.name} ataca con ${ally.nombre} (${ally.fuerza + bonus} ⚔) → Línea de Ataque.`,
+          'combat'
+        );
+      },
+
+      // ── Tap / untap ───────────────────────────────────────────────────────
+      tapCard: (instanceId, playerId) => {
+        set((s) => ({
+          players: {
+            ...s.players,
+            [playerId]: {
+              ...s.players[playerId],
+              defenseField: s.players[playerId].defenseField.map((c) =>
                 c.instanceId === instanceId ? { ...c, tapped: !c.tapped } : c
               ),
             },
@@ -236,79 +308,65 @@ export const useGameStore = create<GameStore>()(
         }));
       },
 
-      // ── Advance turn phase ──
+      // ── Advance phase ─────────────────────────────────────────────────────
       advancePhase: () => {
-        const phaseOrder: TurnPhase[] = ['draw', 'main', 'combat', 'end'];
+        const phases: TurnPhase[] = ['draw', 'main', 'combat', 'end'];
         const { turn } = get();
-        const currentIndex = phaseOrder.indexOf(turn.phase);
-        const nextPhase = phaseOrder[currentIndex + 1];
+        const idx = phases.indexOf(turn.phase);
+        const next = phases[idx + 1];
 
-        if (!nextPhase) {
-          get().endTurn();
-          return;
-        }
+        if (!next) { get().endTurn(); return; }
 
-        if (nextPhase === 'draw') {
-          get().drawCard(turn.currentPlayer);
-        }
+        if (next === 'draw') get().drawCard(turn.currentPlayer);
 
-        set((state) => ({
-          turn: { ...state.turn, phase: nextPhase },
-        }));
-
-        get().addLog(`Fase: ${nextPhase.toUpperCase()}`, 'system');
+        set((s) => ({ turn: { ...s.turn, phase: next } }));
+        get().addLog(`Fase: ${next.toUpperCase()}`, 'system');
       },
 
-      // ── End turn ──
+      // ── End turn ──────────────────────────────────────────────────────────
       endTurn: () => {
         const { turn, players } = get();
-        const nextPlayer: PlayerId =
-          turn.currentPlayer === 'player' ? 'opponent' : 'player';
-        const nextTurnNumber = nextPlayer === 'player'
-          ? turn.turnNumber + 1
-          : turn.turnNumber;
+        const nextId: PlayerId = turn.currentPlayer === 'player' ? 'opponent' : 'player';
+        const nextTurn = nextId === 'player' ? turn.turnNumber + 1 : turn.turnNumber;
+        const next = players[nextId];
 
-        // Untap all cards for next player
-        const nextPlayerState = players[nextPlayer];
-        const untappedField = nextPlayerState.field.map((c) => ({
+        // Return attacked allies back to defense, untap everything
+        const allAllies = [...next.defenseField, ...next.attackField].map((c) => ({
           ...c,
           tapped: false,
           attackedThisTurn: false,
         }));
 
-        set((state) => ({
+        set((s) => ({
           turn: {
-            currentPlayer: nextPlayer,
+            currentPlayer: nextId,
             phase: 'main',
-            turnNumber: nextTurnNumber,
+            turnNumber: nextTurn,
             cardsPlayedThisTurn: 0,
           },
+          isBoardRotating: false,
           players: {
-            ...state.players,
-            [nextPlayer]: {
-              ...nextPlayerState,
-              field: untappedField,
+            ...s.players,
+            [nextId]: {
+              ...next,
+              defenseField: allAllies,
+              attackField: [],
               drawnThisTurn: false,
             },
           },
         }));
 
-        // Auto-draw for the next player
-        get().drawCard(nextPlayer);
-        get().addLog(
-          `Turno ${nextTurnNumber}: es el turno de ${players[nextPlayer].name}.`,
-          'system'
-        );
+        // Auto-draw from Mazo Castillo
+        get().drawCard(nextId);
+        get().addLog(`Turno ${nextTurn}: es el turno de ${players[nextId].name}.`, 'system');
       },
 
-      // ── Init / Reset game ──
       initGame: () => set(buildInitialState()),
       resetGame: () => set(buildInitialState()),
 
-      // ── Add to game log ──
-      addLog: (message, type = 'action') => {
-        set((state) => ({
-          gameLog: [createLogEntry(message, type), ...state.gameLog].slice(0, 50),
+      addLog: (msg, type = 'action') => {
+        set((s) => ({
+          gameLog: [createLogEntry(msg, type), ...s.gameLog].slice(0, 60),
         }));
       },
     }),

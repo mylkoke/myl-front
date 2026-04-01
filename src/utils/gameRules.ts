@@ -3,8 +3,8 @@ import type { PlayerState, TurnState } from '@/types/game.types';
 
 export const INITIAL_LIFE = 20;
 export const INITIAL_HAND_SIZE = 5;
-export const MAX_FIELD_CARDS = 5;
-export const MAX_GOLD_PER_TURN = 1;
+export const MAX_DEFENSE_CARDS = 5;
+export const MAX_SUPPORT_CARDS = 3;
 
 /**
  * Pure function: can a card be played given player's current state?
@@ -17,15 +17,11 @@ export function canPlayCard(
   if (turn.currentPlayer !== player.id) {
     return { allowed: false, reason: 'No es tu turno' };
   }
-
   if (turn.phase !== 'main') {
     return { allowed: false, reason: 'Solo puedes jugar cartas en la fase principal' };
   }
 
   if (card.tipo === 'oro') {
-    if (turn.cardsPlayedThisTurn >= MAX_GOLD_PER_TURN && player.goldCount === 0) {
-      return { allowed: false, reason: 'Ya jugaste un oro este turno' };
-    }
     return { allowed: true };
   }
 
@@ -36,35 +32,23 @@ export function canPlayCard(
     };
   }
 
-  if (card.tipo === 'criatura' && player.field.length >= MAX_FIELD_CARDS) {
-    return { allowed: false, reason: `El campo está lleno (máximo ${MAX_FIELD_CARDS})` };
+  if (card.tipo === 'aliado' && player.defenseField.length >= MAX_DEFENSE_CARDS) {
+    return { allowed: false, reason: `La línea de defensa está llena (máximo ${MAX_DEFENSE_CARDS})` };
+  }
+
+  if (card.tipo === 'totem' && player.supportField.length >= MAX_SUPPORT_CARDS) {
+    return { allowed: false, reason: `La línea de apoyo está llena (máximo ${MAX_SUPPORT_CARDS})` };
+  }
+
+  if (card.tipo === 'arma' && player.defenseField.filter(c => c.tipo === 'aliado').length === 0) {
+    return { allowed: false, reason: 'Necesitas un aliado en la línea de defensa para equipar un arma' };
   }
 
   return { allowed: true };
 }
 
 /**
- * Pure function: resolve combat between two creatures
- */
-export function resolveCombat(
-  attacker: CardInPlay,
-  defender: CardInPlay
-): { attackerSurvives: boolean; defenderSurvives: boolean } {
-  return {
-    attackerSurvives: attacker.fuerza > defender.fuerza,
-    defenderSurvives: defender.fuerza >= attacker.fuerza,
-  };
-}
-
-/**
- * Calculate damage dealt to life when attacking player directly
- */
-export function calculateDirectDamage(attacker: CardInPlay): number {
-  return attacker.fuerza;
-}
-
-/**
- * Pure function: can a creature attack this turn?
+ * Pure function: can an ally attack this turn?
  */
 export function canAttack(
   card: CardInPlay,
@@ -74,24 +58,42 @@ export function canAttack(
   if (turn.currentPlayer !== ownerId) {
     return { allowed: false, reason: 'Solo puedes atacar en tu turno' };
   }
-
   if (turn.phase !== 'combat') {
     return { allowed: false, reason: 'Solo puedes atacar en la fase de combate' };
   }
-
   if (card.attackedThisTurn) {
-    return { allowed: false, reason: 'Esta criatura ya atacó este turno' };
+    return { allowed: false, reason: 'Este aliado ya atacó este turno' };
   }
-
   if (card.tapped) {
-    return { allowed: false, reason: 'Esta criatura está agotada' };
+    return { allowed: false, reason: 'Este aliado está agotado' };
   }
-
   return { allowed: true };
 }
 
 /**
- * Checks if the game is over (life <= 0 or empty deck at draw)
+ * Pure function: resolve combat between two allies.
+ * Force comparison: higher force wins; ties destroy both.
+ */
+export function resolveCombat(
+  attacker: CardInPlay,
+  defender: CardInPlay,
+  attackerWeaponBonus = 0,
+  defenderWeaponBonus = 0
+): { attackerSurvives: boolean; defenderSurvives: boolean } {
+  const atkForce = attacker.fuerza + attackerWeaponBonus;
+  const defForce = defender.fuerza + defenderWeaponBonus;
+  return {
+    attackerSurvives: atkForce > defForce,
+    defenderSurvives: defForce > atkForce,
+  };
+}
+
+export function calculateDirectDamage(attacker: CardInPlay, weaponBonus = 0): number {
+  return attacker.fuerza + weaponBonus;
+}
+
+/**
+ * Check if the game is over (any player's life ≤ 0).
  */
 export function checkGameOver(players: Record<string, PlayerState>): {
   isOver: boolean;
