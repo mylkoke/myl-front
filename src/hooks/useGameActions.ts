@@ -15,19 +15,20 @@ export function useGameActions() {
   const endTurn = useGameStore((s) => s.endTurn);
   const resetGame = useGameStore((s) => s.resetGame);
   const addLog = useGameStore((s) => s.addLog);
-
-  const endPlayerTurn = () => endTurn();
-  const drawForPlayer = (id: PlayerId) => drawCard(id);
+  const equipWeapon = useGameStore((s) => s.equipWeapon);
+  const unequipWeapon = useGameStore((s) => s.unequipWeapon);
 
   return {
     playCard,
     moveCard,
     selectCard,
     tapCard,
-    drawForPlayer,
+    drawForPlayer: (id: PlayerId) => drawCard(id),
     advancePhase,
-    endPlayerTurn,
+    endPlayerTurn: () => endTurn(),
     resetGame,
     addLog,
+    equipWeapon,
+    unequipWeapon,
   };
 }

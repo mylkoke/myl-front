@@ -1,6 +1,6 @@
 export type SealType = 'real' | 'ultra real' | 'mega real' | string;
 
-export type CardType = 'criatura' | 'talisman' | 'arma' | 'tierra' | 'oro';
+export type CardType = 'aliado' | 'talisman' | 'arma' | 'tierra' | 'oro';
 
 export type CardRarity = 'comun' | 'infrecuente' | 'raro' | 'ultra raro';
 
@@ -18,6 +18,8 @@ export interface Card {
   tipoSello: SealType;
   tipo: CardType;
   rareza: CardRarity;
+  /** Bonus de fuerza que aporta esta carta (usado por armas) */
+  bonusFuerza?: number;
   expansion?: string;
 }
 

@@ -6,8 +6,7 @@ export type ZoneId =
   | 'deck'
   | 'graveyard'
   | 'gold'
-  | 'talisman'
-  | 'weapon';
+  | 'talisman';
 
 export type TurnPhase =
   | 'draw'
@@ -27,13 +26,19 @@ export interface Zone {
 export interface PlayerState {
   id: PlayerId;
   name: string;
+  /** Mazo Castillo */
   deck: Card[];
   hand: CardInPlay[];
+  /** Solo cartas de tipo 'aliado' y 'tierra' van al campo */
   field: CardInPlay[];
   graveyard: CardInPlay[];
   gold: CardInPlay[];
   talisman: CardInPlay | null;
-  weapon: CardInPlay | null;
+  /**
+   * Armas equipadas a aliados.
+   * Clave = instanceId del aliado, valor = carta de arma equipada.
+   */
+  equippedWeapons: Record<string, CardInPlay>;
   life: number;
   goldCount: number;
   drawnThisTurn: boolean;
@@ -53,6 +58,8 @@ export interface GameState {
   isGameOver: boolean;
   winner: PlayerId | null;
   gameLog: GameLogEntry[];
+  /** Controla si el tablero está en animación de rotación */
+  isBoardRotating: boolean;
 }
 
 export interface GameLogEntry {
@@ -66,4 +73,6 @@ export interface DragPayload {
   card: CardInPlay;
   sourceZone: ZoneId;
   sourcePlayer: PlayerId;
+  /** instanceId del aliado al que se está equipando (para armas) */
+  targetAllyInstanceId?: string;
 }

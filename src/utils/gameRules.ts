@@ -36,8 +36,8 @@ export function canPlayCard(
     };
   }
 
-  if (card.tipo === 'criatura' && player.field.length >= MAX_FIELD_CARDS) {
-    return { allowed: false, reason: `El campo está lleno (máximo ${MAX_FIELD_CARDS})` };
+  if (card.tipo === 'aliado' && player.field.filter(c => c.tipo === 'aliado').length >= MAX_FIELD_CARDS) {
+    return { allowed: false, reason: `El campo está lleno (máximo ${MAX_FIELD_CARDS} aliados)` };
   }
 
   return { allowed: true };
