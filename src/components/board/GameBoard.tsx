@@ -7,6 +7,7 @@ import { PlayerArea } from './PlayerArea';
 import { Separator } from './Separator';
 import { Button } from '@/components/ui/Button';
 import { ChevronRight, SkipForward, RefreshCw, Loader2 } from 'lucide-react';
+import { APP_VERSION } from '@/version';
 
 const EASE_IN: Easing  = 'easeIn';
 const EASE_OUT: Easing = 'easeOut';
@@ -117,6 +118,10 @@ export function GameBoard() {
               <RefreshCw size={12} /> Nueva partida
             </Button>
           )}
+          {/* Version badge — top right corner */}
+          <span className="text-[9px] text-slate-600 font-mono select-none ml-2">
+            v{APP_VERSION}
+          </span>
         </div>
       </div>
 
