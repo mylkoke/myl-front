@@ -21,16 +21,11 @@ interface SmallZoneProps {
 }
 
 function SmallZone({ label, letter, letterColor, cards, onCardClick, title }: SmallZoneProps) {
-  const top = cards.at(-1); // show only top card
+  const top = cards.at(-1);
 
   return (
-    <div
-      className="flex flex-col items-center gap-0.5 w-14"
-      title={title ?? label}
-    >
-      <div className={`text-[8px] uppercase tracking-wider ${letterColor} font-bold`}>
-        {letter}
-      </div>
+    <div className="flex flex-col items-center gap-0.5 w-14" title={title ?? label}>
+      <div className={`text-[8px] uppercase tracking-wider ${letterColor} font-bold`}>{letter}</div>
       <div
         className={[
           'relative w-12 h-16 rounded-lg border-2 border-dashed cursor-default',
@@ -39,17 +34,12 @@ function SmallZone({ label, letter, letterColor, cards, onCardClick, title }: Sm
         ].join(' ')}
       >
         {top ? (
-          <div
-            className="absolute inset-0.5 cursor-pointer"
-            onClick={() => onCardClick?.(top)}
-          >
+          <div className="absolute inset-0.5 cursor-pointer" onClick={() => onCardClick?.(top)}>
             <CardView card={top} compact />
           </div>
         ) : (
           <span className={`text-lg font-black opacity-20 ${letterColor}`}>{letter}</span>
         )}
-
-        {/* Count badge */}
         {cards.length > 1 && (
           <div className="absolute -top-1 -right-1 bg-slate-700 text-white text-[8px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
             {cards.length}
@@ -57,6 +47,70 @@ function SmallZone({ label, letter, letterColor, cards, onCardClick, title }: Sm
         )}
       </div>
       <div className="text-[7px] text-slate-600 text-center leading-tight">{label}</div>
+    </div>
+  );
+}
+
+/**
+ * Zona O — Oros.
+ * Muestra todas las cartas de oro acumuladas con un contador prominente.
+ * Las cartas se apilan visualmente y quedan en la zona de forma permanente.
+ */
+interface GoldZoneProps {
+  cards: CardInPlay[];
+  goldCount: number;
+  onCardClick?: (c: CardInPlay) => void;
+}
+
+function GoldZone({ cards, goldCount, onCardClick }: GoldZoneProps) {
+  const stackVisible = Math.min(cards.length, 4);
+
+  return (
+    <div className="flex flex-col items-center gap-0.5 w-14" title="O — Zona de Oros">
+      <div className="text-[8px] uppercase tracking-wider text-yellow-400 font-bold">O</div>
+
+      {/* Card pile + counter */}
+      <div className="relative w-12 h-16">
+        {cards.length === 0 ? (
+          <div className="w-full h-full rounded-lg border-2 border-dashed border-slate-800/60 bg-slate-900/60 flex items-center justify-center">
+            <span className="text-lg font-black opacity-20 text-yellow-400">O</span>
+          </div>
+        ) : (
+          <>
+            {/* Stacked offset layers */}
+            {Array.from({ length: stackVisible }).map((_, i) => (
+              <div
+                key={i}
+                className="absolute rounded-lg border border-yellow-600/40 bg-yellow-950/60"
+                style={{
+                  width: 44,
+                  height: 60,
+                  top: (stackVisible - 1 - i) * 2,
+                  left: (stackVisible - 1 - i) * 1,
+                  zIndex: i,
+                }}
+              />
+            ))}
+            {/* Top card — clickable */}
+            <div
+              className="absolute cursor-pointer"
+              style={{ top: 0, left: stackVisible - 1, zIndex: stackVisible, width: 44, height: 60 }}
+              onClick={() => onCardClick?.(cards.at(-1)!)}
+            >
+              <CardView card={cards.at(-1)!} compact />
+            </div>
+          </>
+        )}
+
+        {/* Gold counter badge — always visible when > 0 */}
+        {goldCount > 0 && (
+          <div className="absolute -top-1.5 -right-1.5 z-20 bg-yellow-500 text-black text-[9px] font-black rounded-full w-5 h-5 flex items-center justify-center shadow border border-yellow-300">
+            {goldCount}
+          </div>
+        )}
+      </div>
+
+      <div className="text-[7px] text-slate-600 text-center leading-tight">Oros</div>
     </div>
   );
 }
@@ -69,22 +123,10 @@ export function SideZones({ player, playerId, isOpponent = false }: SideZonesPro
       <div className="flex flex-col gap-1 flex-shrink-0">
         {/* Row 1: P — Oro Pagado | R — Removidas */}
         <div className="flex gap-1">
-          <SmallZone
-            letter="P"
-            letterColor="text-yellow-500"
-            label="Oro Pagado"
-            cards={player.goldPaid}
-            onCardClick={setDetailCard}
-            title="P — Zona de Oro Pagado"
-          />
-          <SmallZone
-            letter="R"
-            letterColor="text-orange-400"
-            label="Removidas"
-            cards={player.removed}
-            onCardClick={setDetailCard}
-            title="R — Cartas Removidas"
-          />
+          <SmallZone letter="P" letterColor="text-yellow-500" label="Oro Pagado"
+            cards={player.goldPaid} onCardClick={setDetailCard} title="P — Zona de Oro Pagado" />
+          <SmallZone letter="R" letterColor="text-orange-400" label="Removidas"
+            cards={player.removed} onCardClick={setDetailCard} title="R — Cartas Removidas" />
         </div>
 
         {/* Row 2: M — Mazo Castillo | + — Cementerio */}
@@ -93,43 +135,19 @@ export function SideZones({ player, playerId, isOpponent = false }: SideZonesPro
             <div className="text-[8px] uppercase tracking-wider text-slate-300 font-bold">M</div>
             <DeckPile deck={player.deck} playerId={playerId} isOpponent={isOpponent} />
           </div>
-
-          <SmallZone
-            letter="+"
-            letterColor="text-slate-300"
-            label="Cementerio"
-            cards={player.graveyard}
-            onCardClick={setDetailCard}
-            title="+ — Cementerio"
-          />
+          <SmallZone letter="+" letterColor="text-slate-300" label="Cementerio"
+            cards={player.graveyard} onCardClick={setDetailCard} title="+ — Cementerio" />
         </div>
 
-        {/* Row 3: O — Oros | D — Destierro */}
+        {/* Row 3: O — Oros (zona especial) | D — Destierro */}
         <div className="flex gap-1">
-          <SmallZone
-            letter="O"
-            letterColor="text-yellow-400"
-            label="Oros"
-            cards={player.gold}
-            onCardClick={setDetailCard}
-            title="O — Zona de Oros"
-          />
-          <SmallZone
-            letter="D"
-            letterColor="text-purple-400"
-            label="Destierro"
-            cards={player.exile}
-            onCardClick={setDetailCard}
-            title="D — Destierro"
-          />
+          <GoldZone cards={player.gold} goldCount={player.goldCount} onCardClick={setDetailCard} />
+          <SmallZone letter="D" letterColor="text-purple-400" label="Destierro"
+            cards={player.exile} onCardClick={setDetailCard} title="D — Destierro" />
         </div>
       </div>
 
-      <CardDetail
-        card={detailCard}
-        isOpen={!!detailCard}
-        onClose={() => setDetailCard(null)}
-      />
+      <CardDetail card={detailCard} isOpen={!!detailCard} onClose={() => setDetailCard(null)} />
     </>
   );
 }
