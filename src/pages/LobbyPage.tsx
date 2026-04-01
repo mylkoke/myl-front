@@ -24,9 +24,6 @@ export function LobbyPage() {
         <h1 className="text-4xl font-black text-white tracking-tight">
           Mitos y Leyendas
         </h1>
-        <p className="text-slate-400 mt-2 text-sm tracking-widest uppercase">
-          El juego de cartas coleccionables chileno
-        </p>
       </div>
 
       {/* Menu */}
