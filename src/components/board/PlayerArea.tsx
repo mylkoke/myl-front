@@ -13,17 +13,17 @@ interface PlayerAreaProps {
 }
 
 const PHASE_LABELS: Record<TurnPhase, string> = {
-  draw:   'Robar',
-  main:   'Principal',
-  combat: 'Combate',
-  end:    'Final',
+  agrupacion: 'Agrupación',
+  vigilia:    'Vigilia',
+  batalla:    'Batalla Mitológica',
+  final:      'Fase Final',
 };
 
 const PHASE_COLORS: Record<TurnPhase, string> = {
-  draw:   'text-blue-400 border-blue-500/40',
-  main:   'text-green-400 border-green-500/40',
-  combat: 'text-red-400 border-red-500/40',
-  end:    'text-slate-400 border-slate-500/40',
+  agrupacion: 'text-slate-400 border-slate-500/40',
+  vigilia:    'text-green-400 border-green-500/40',
+  batalla:    'text-red-400 border-red-500/40',
+  final:      'text-blue-400 border-blue-500/40',
 };
 
 export function PlayerArea({ player, playerId, isOpponent = false, currentPhase }: PlayerAreaProps) {

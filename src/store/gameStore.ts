@@ -41,15 +41,16 @@ function buildInitialState(): GameState {
     },
     turn: {
       currentPlayer: 'player',
-      phase: 'main',
+      phase: 'vigilia',
       turnNumber: 1,
       cardsPlayedThisTurn: 0,
+      goldPlayedThisTurn: 0,
     },
     selectedCard: null,
     isGameOver: false,
     winner: null,
     isBoardRotating: false,
-    gameLog: [createLogEntry('¡Partida iniciada! Turno del Jugador — Fase Principal.', 'system')],
+    gameLog: [createLogEntry('¡Partida iniciada! Turno del Jugador — Vigilia.', 'system')],
   };
 }
 
@@ -206,7 +207,14 @@ export const useGameStore = create<GameStore>()(
 
         set((s) => ({
           players: { ...s.players, [playerId]: updated },
-          turn: { ...s.turn, cardsPlayedThisTurn: s.turn.cardsPlayedThisTurn + 1 },
+          turn: {
+            ...s.turn,
+            cardsPlayedThisTurn: s.turn.cardsPlayedThisTurn + 1,
+            goldPlayedThisTurn:
+              card.tipo === 'oro'
+                ? s.turn.goldPlayedThisTurn + 1
+                : s.turn.goldPlayedThisTurn,
+          },
         }));
 
         const { isOver, winnerId } = checkGameOver(get().players);
@@ -259,8 +267,8 @@ export const useGameStore = create<GameStore>()(
           get().addLog('No es tu turno.', 'error');
           return;
         }
-        if (turn.phase !== 'combat') {
-          get().addLog('Solo puedes atacar en la fase de combate.', 'error');
+        if (turn.phase !== 'batalla') {
+          get().addLog('Solo puedes atacar en la Batalla Mitológica.', 'error');
           return;
         }
 
@@ -309,28 +317,38 @@ export const useGameStore = create<GameStore>()(
       },
 
       // ── Advance phase ─────────────────────────────────────────────────────
+      // Fases MYL: Agrupación → Vigilia → Batalla Mitológica → Fase Final
       advancePhase: () => {
-        const phases: TurnPhase[] = ['draw', 'main', 'combat', 'end'];
+        const phases: TurnPhase[] = ['agrupacion', 'vigilia', 'batalla', 'final'];
         const { turn } = get();
         const idx = phases.indexOf(turn.phase);
         const next = phases[idx + 1];
 
         if (!next) { get().endTurn(); return; }
 
-        if (next === 'draw') get().drawCard(turn.currentPlayer);
-
         set((s) => ({ turn: { ...s.turn, phase: next } }));
-        get().addLog(`Fase: ${next.toUpperCase()}`, 'system');
+
+        const LABELS: Record<TurnPhase, string> = {
+          agrupacion: 'Agrupación',
+          vigilia:    'Vigilia',
+          batalla:    'Batalla Mitológica',
+          final:      'Fase Final',
+        };
+        get().addLog(`Fase: ${LABELS[next]}`, 'system');
       },
 
       // ── End turn ──────────────────────────────────────────────────────────
+      // Al cambiar de turno:
+      //  1. Agrupación automática: todas las cartas del siguiente jugador se enderezan
+      //  2. Se roba 1 carta del Mazo Castillo
+      //  3. La fase inicia en 'vigilia'
       endTurn: () => {
         const { turn, players } = get();
         const nextId: PlayerId = turn.currentPlayer === 'player' ? 'opponent' : 'player';
         const nextTurn = nextId === 'player' ? turn.turnNumber + 1 : turn.turnNumber;
         const next = players[nextId];
 
-        // Return attacked allies back to defense, untap everything
+        // Agrupación: todos los aliados del siguiente jugador se enderezan
         const allAllies = [...next.defenseField, ...next.attackField].map((c) => ({
           ...c,
           tapped: false,
@@ -340,9 +358,10 @@ export const useGameStore = create<GameStore>()(
         set((s) => ({
           turn: {
             currentPlayer: nextId,
-            phase: 'main',
+            phase: 'vigilia',
             turnNumber: nextTurn,
             cardsPlayedThisTurn: 0,
+            goldPlayedThisTurn: 0,
           },
           isBoardRotating: false,
           players: {

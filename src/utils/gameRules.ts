@@ -17,11 +17,14 @@ export function canPlayCard(
   if (turn.currentPlayer !== player.id) {
     return { allowed: false, reason: 'No es tu turno' };
   }
-  if (turn.phase !== 'main') {
-    return { allowed: false, reason: 'Solo puedes jugar cartas en la fase principal' };
+  if (turn.phase !== 'vigilia') {
+    return { allowed: false, reason: 'Solo puedes jugar cartas en la fase de Vigilia' };
   }
 
   if (card.tipo === 'oro') {
+    if (turn.goldPlayedThisTurn >= 1) {
+      return { allowed: false, reason: 'Solo puedes jugar 1 carta de oro por turno' };
+    }
     return { allowed: true };
   }
 
@@ -58,8 +61,8 @@ export function canAttack(
   if (turn.currentPlayer !== ownerId) {
     return { allowed: false, reason: 'Solo puedes atacar en tu turno' };
   }
-  if (turn.phase !== 'combat') {
-    return { allowed: false, reason: 'Solo puedes atacar en la fase de combate' };
+  if (turn.phase !== 'batalla') {
+    return { allowed: false, reason: 'Solo puedes atacar en la Batalla Mitológica' };
   }
   if (card.attackedThisTurn) {
     return { allowed: false, reason: 'Este aliado ya atacó este turno' };

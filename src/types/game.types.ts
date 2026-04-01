@@ -12,7 +12,11 @@ export type ZoneId =
   | 'gold'         // O — Zona de oros disponibles
   | 'exile';       // D — Destierro
 
-export type TurnPhase = 'draw' | 'main' | 'combat' | 'end';
+export type TurnPhase =
+  | 'agrupacion'  // Enderezar todas las cartas (automático)
+  | 'vigilia'     // Robar 1, jugar 1 oro, jugar cartas
+  | 'batalla'     // Declarar ataques y bloqueos
+  | 'final';      // Fase final — efectos de fin de turno
 
 export type PlayerId = 'player' | 'opponent';
 
@@ -56,6 +60,8 @@ export interface TurnState {
   phase: TurnPhase;
   turnNumber: number;
   cardsPlayedThisTurn: number;
+  /** Solo se puede jugar 1 carta de oro por turno (en vigilia) */
+  goldPlayedThisTurn: number;
 }
 
 export interface GameState {
