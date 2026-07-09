@@ -7,8 +7,9 @@ services:
     runtime: node
     plan: free
     rootDir: server
-    buildCommand: npm install --include=dev && npm run build
-    startCommand: npm run start
+    # npx: el FS global de Render es read-only (npm install -g falla)
+    buildCommand: npx -y pnpm@11 install --frozen-lockfile && npx -y pnpm@11 run build
+    startCommand: node dist/main.js
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV

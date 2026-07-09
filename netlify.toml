@@ -1,0 +1,11 @@
+# Netlify — frontend Vite (SPA)
+# VITE_API_URL se define en el dashboard de Netlify (Environment variables).
+[build]
+  command = "pnpm run build"
+  publish = "dist"
+
+# SPA: todas las rutas las resuelve react-router en el cliente
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
