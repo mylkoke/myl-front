@@ -34,15 +34,15 @@ export function PlayerArea({ player, playerId, isOpponent = false, currentPhase 
     <div className="flex flex-col gap-1.5 w-full">
 
       {/* ── Header: stats + phase ──────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-3 py-1 rounded-lg bg-slate-900/70 border border-slate-700/40">
-        <div className="flex items-center gap-3">
-          <span className="font-bold text-white text-sm">{player.name}</span>
-          <span className={`flex items-center gap-0.5 font-bold text-sm ${lifeColor}`}>
-            <Heart size={12} />
+      <div className="flex items-center justify-between px-2 sm:px-3 py-0.5 sm:py-1 rounded-lg bg-slate-900/70 border border-slate-700/40">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <span className="font-bold text-white text-xs sm:text-sm">{player.name}</span>
+          <span className={`flex items-center gap-0.5 font-bold text-xs sm:text-sm ${lifeColor}`}>
+            <Heart size={10} />
             {player.life}
           </span>
-          <span className="flex items-center gap-0.5 text-yellow-400 font-bold text-sm">
-            <Coins size={12} />
+          <span className="flex items-center gap-0.5 text-yellow-400 font-bold text-xs sm:text-sm">
+            <Coins size={10} />
             {player.goldCount}
           </span>
         </div>
@@ -56,7 +56,7 @@ export function PlayerArea({ player, playerId, isOpponent = false, currentPhase 
       </div>
 
       {/* ── Main board row: 3 lines (left) + 6 zones (right) ─────────── */}
-      <div className="flex gap-1.5 items-stretch">
+      <div className="flex flex-col sm:flex-row gap-1.5 items-stretch">
         {/* Three horizontal lines */}
         <ThreeLineField playerId={playerId} isOpponent={isOpponent} />
 
@@ -65,8 +65,11 @@ export function PlayerArea({ player, playerId, isOpponent = false, currentPhase 
       </div>
 
       {/* ── Hand ──────────────────────────────────────────────────────── */}
-      <div className="px-2 py-1.5 bg-slate-900/50 rounded-lg border border-slate-700/30">
-        <div className="text-[8px] text-slate-600 uppercase tracking-widest mb-1">
+      <div
+        className="px-1.5 sm:px-2 py-1 sm:py-1.5 bg-slate-900/50 rounded-lg border border-slate-700/30"
+        data-fx={`hand-${playerId}`}
+      >
+        <div className="text-[7px] sm:text-[8px] text-slate-600 uppercase tracking-widest mb-0.5 sm:mb-1">
           Mano — {player.hand.length} cartas
         </div>
         <PlayerHand cards={player.hand} playerId={playerId} isOpponent={isOpponent} />

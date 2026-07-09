@@ -4,7 +4,24 @@ import type { GameState, PlayerState, TurnPhase, PlayerId } from '@/types/game.t
 import type { CardInPlay, Card } from '@/types/card.types';
 import { createCardInPlay, createCardsInPlay } from '@/utils/cardFactory';
 import { shuffleDeck, drawCards } from '@/utils/deckUtils';
-import { INITIAL_LIFE, INITIAL_HAND_SIZE, canPlayCard, checkGameOver } from '@/utils/gameRules';
+import {
+  INITIAL_HAND_SIZE,
+  canPlayCard,
+  checkGameOver,
+  hasMachinery,
+  canDeclareAttack,
+  hasIndestructible,
+  hasBlockPunishment,
+  hasCaudilloSummon,
+  isSummonableByCaudillo,
+  CAUDILLO_SUMMON_GOLD_COST,
+  BLOCK_PUNISHMENT_MILL,
+  GOLD_TALISMAN_YIELD,
+  hasGoldTalismanAbility,
+  isHandOnly,
+  resolveInteractiveCombat,
+  strengthLockedFor,
+} from '@/utils/gameRules';
 import { createLogEntry } from '@/utils/gameLog';
 import { STARTING_DECK_PLAYER, STARTING_DECK_OPPONENT } from '@/data/mockCards';
 
@@ -13,44 +30,75 @@ import { STARTING_DECK_PLAYER, STARTING_DECK_OPPONENT } from '@/data/mockCards';
 function buildInitialPlayer(id: PlayerId, name: string, rawDeck: Card[]): PlayerState {
   const shuffled = shuffleDeck(rawDeck);
   const { drawn, remaining } = drawCards(shuffled, INITIAL_HAND_SIZE);
+
+  // Oro inicial: cada jugador comienza con el primer oro de su mazo ya jugado.
+  // Los oros 'solo_desde_mano' (p.ej. Escudo Nacional) no pueden ser oro inicial.
+  const initialGoldIdx = remaining.findIndex((c) => c.tipo === 'oro' && !isHandOnly(c));
+  const initialGold = initialGoldIdx >= 0 ? remaining[initialGoldIdx] : null;
+  const deck = initialGold
+    ? remaining.filter((_, i) => i !== initialGoldIdx)
+    : remaining;
+
   return {
     id,
     name,
-    deck: remaining,
+    deck,
     hand: createCardsInPlay(drawn),
     defenseField: [],
     attackField: [],
     supportField: [],
-    gold: [],
+    gold: initialGold ? [createCardInPlay(initialGold)] : [],
     goldPaid: [],
     graveyard: [],
     removed: [],
     exile: [],
     equippedWeapons: {},
-    life: INITIAL_LIFE,
-    goldCount: 0,
+    weaponTempBonuses: {},
+    weaponAbilityUsedThisTurn: [],
+    allyAbilityUsedThisTurn: [],
+    life: deck.length,
+    goldCount: initialGold ? 1 : 0,
+    talismanGold: 0,
     drawnThisTurn: false,
+    goldSpentThisTurn: false,
   };
 }
 
-function buildInitialState(): GameState {
+export function buildInitialState(
+  deckPlayer?: Card[],
+  deckOpponent?: Card[],
+  names?: { player: string; opponent: string },
+): GameState {
   return {
     players: {
-      player: buildInitialPlayer('player', 'Jugador', STARTING_DECK_PLAYER),
-      opponent: buildInitialPlayer('opponent', 'Oponente', STARTING_DECK_OPPONENT),
+      player: buildInitialPlayer(
+        'player',
+        names?.player ?? 'Jugador',
+        deckPlayer ?? STARTING_DECK_PLAYER,
+      ),
+      opponent: buildInitialPlayer(
+        'opponent',
+        names?.opponent ?? 'Oponente',
+        deckOpponent ?? STARTING_DECK_OPPONENT,
+      ),
     },
     turn: {
       currentPlayer: 'player',
+      // El primer turno no tiene nada que reagrupar → arranca en Vigilia.
       phase: 'vigilia',
       turnNumber: 1,
       cardsPlayedThisTurn: 0,
       goldPlayedThisTurn: 0,
     },
+    combat: null,
     selectedCard: null,
     isGameOver: false,
     winner: null,
     isBoardRotating: false,
-    gameLog: [createLogEntry('¡Partida iniciada! Turno del Jugador — Vigilia.', 'system')],
+    gameLog: [
+      createLogEntry('Cada jugador comienza con su oro inicial en juego.', 'system'),
+      createLogEntry('¡Partida iniciada! Turno del Jugador — Vigilia.', 'system'),
+    ],
   };
 }
 
@@ -61,15 +109,48 @@ type GameLogEntry = import('@/types/game.types').GameLogEntry;
 interface GameActions {
   playCard: (card: CardInPlay, playerId: PlayerId) => void;
   equipWeapon: (weapon: CardInPlay, allyInstanceId: string, playerId: PlayerId) => void;
-  attackWithAlly: (allyInstanceId: string, playerId: PlayerId) => void;
+  /** Declara un ataque: mueve el aliado a la línea de ataque y abre la ventana de defensa. */
+  declareAttack: (allyInstanceId: string, playerId: PlayerId) => void;
+  /** El defensor declara bloqueo (aliado o null) → inicia la Guerra de Talismanes. */
+  defendWith: (defenderInstanceId: string | null, playerId: PlayerId) => void;
+  /** Guerra de Talismanes: el jugador activo pasa (2 pases seguidos = resolver). */
+  passCombat: (playerId: PlayerId) => void;
+  /** Guerra de Talismanes: el jugador activo juega un talismán. */
+  playCombatTalisman: (card: CardInPlay, playerId: PlayerId) => void;
+  /** Asignación de daño: resuelve el combate al terminar la Guerra de Talismanes. */
+  resolveCombat: () => void;
   selectCard: (card: CardInPlay | null) => void;
   tapCard: (instanceId: string, playerId: PlayerId) => void;
   drawCard: (playerId: PlayerId) => void;
   advancePhase: () => void;
   endTurn: () => void;
+  /** Mueve goldPaid → gold (disponible durante el turno del jugador) */
+  regroupGold: (playerId: PlayerId) => void;
+  /** Mueve todos los aliados de attackField → defenseField y los endereza */
+  regroupAllies: (playerId: PlayerId) => void;
   setBoardRotating: (v: boolean) => void;
-  initGame: () => void;
+  initGame: (deckPlayer?: Card[], deckOpponent?: Card[]) => void;
   resetGame: () => void;
+  /** El jugador indicado se rinde; su rival es declarado ganador. */
+  surrender: (loserId: PlayerId) => void;
+  /**
+   * Activa la habilidad "poder_temporal" de un arma equipada:
+   * paga 1 oro del jugador y suma +2 de fuerza al aliado portador hasta la Fase Final.
+   */
+  activateWeaponAbility: (weaponInstanceId: string, allyInstanceId: string, playerId: PlayerId) => void;
+  /**
+   * 'invocacion_caudillo': paga 3 oros y juega desde el Mazo Castillo un
+   * aliado de la misma raza con coste ≤ 4, sin pagar su coste. 1 vez por turno.
+   */
+  summonCaudilloFromDeck: (sourceInstanceId: string, deckIndex: number, playerId: PlayerId) => void;
+  /**
+   * 'oro_talismanes' (Escudo Nacional): paga ese oro (va a la zona P) y genera
+   * 2 oros virtuales que SOLO pagan talismanes. Activable durante el turno
+   * propio o el del oponente; los oros virtuales expiran al terminar el turno.
+   */
+  activateGoldTalisman: (goldInstanceId: string, playerId: PlayerId) => void;
+  /** Replace the whole game state (online sync). */
+  hydrateState: (state: GameState) => void;
   addLog: (msg: string, type?: GameLogEntry['type']) => void;
 }
 
@@ -106,6 +187,7 @@ export const useGameStore = create<GameStore>()(
               deck: remaining,
               hand: [...s.players[playerId].hand, newCard],
               drawnThisTurn: true,
+              life: remaining.length,
             },
           },
         }));
@@ -139,81 +221,97 @@ export const useGameStore = create<GameStore>()(
             break;
 
           // Aliados → línea de defensa
-          case 'aliado':
+          case 'aliado': {
+            const paid    = player.gold.slice(player.gold.length - card.coste);
+            const remaining = player.gold.slice(0, player.gold.length - card.coste);
             updated = {
               ...updated,
-              defenseField: [...player.defenseField, card],
-              goldCount: player.goldCount - card.coste,
+              defenseField: [...player.defenseField, { ...card, summonedThisTurn: true }],
+              gold:     remaining,
+              goldPaid: [...player.goldPaid, ...paid],
+              goldCount: remaining.length,
             };
             get().addLog(`${player.name} invocó a ${card.nombre} (${card.fuerza} ⚔).`);
             break;
+          }
 
           // Tótems → línea de apoyo (permanente)
-          case 'totem':
+          case 'totem': {
+            const paid    = player.gold.slice(player.gold.length - card.coste);
+            const remaining = player.gold.slice(0, player.gold.length - card.coste);
             updated = {
               ...updated,
               supportField: [...player.supportField, card],
-              goldCount: player.goldCount - card.coste,
+              gold:     remaining,
+              goldPaid: [...player.goldPaid, ...paid],
+              goldCount: remaining.length,
             };
             get().addLog(`${player.name} colocó el tótem ${card.nombre} en la línea de apoyo.`);
             break;
+          }
 
           // Talismanes → efecto inmediato → cementerio
-          case 'talisman':
+          case 'talisman': {
+            // Se pagan primero con oros virtuales 'oro_talismanes' (si hay).
+            const fromVirtual = Math.min(player.talismanGold, card.coste);
+            const fromCards   = card.coste - fromVirtual;
+            const paid    = player.gold.slice(player.gold.length - fromCards);
+            const remaining = player.gold.slice(0, player.gold.length - fromCards);
             updated = {
               ...updated,
               graveyard: [...player.graveyard, card],
-              goldCount: player.goldCount - card.coste,
+              gold:     remaining,
+              goldPaid: [...player.goldPaid, ...paid],
+              goldCount: remaining.length,
+              talismanGold: player.talismanGold - fromVirtual,
             };
             get().addLog(
               `${player.name} activó ${card.nombre}: "${card.habilidad}" → va al cementerio.`,
               'action'
             );
             break;
-
-          // Armas → se equipa al primer aliado libre en defensa
-          case 'arma': {
-            const freeAlly = player.defenseField.find(
-              (c) => c.tipo === 'aliado' && !player.equippedWeapons[c.instanceId]
-            );
-            if (!freeAlly) {
-              get().addLog('No hay aliado libre para equipar el arma.', 'error');
-              return;
-            }
-            updated = {
-              ...updated,
-              goldCount: player.goldCount - card.coste,
-              equippedWeapons: {
-                ...player.equippedWeapons,
-                [freeAlly.instanceId]: card,
-              },
-            };
-            get().addLog(
-              `${player.name} equipó ${card.nombre} a ${freeAlly.nombre} (+${card.bonusFuerza ?? 0} ⚔).`
-            );
-            break;
           }
 
-          // Tierras → línea de apoyo
-          case 'tierra':
+          // Armas: con "maquinaria" se juegan en apoyo como un tótem;
+          // sin ella deben equiparse a un aliado específico (equipWeapon).
+          case 'arma': {
+            if (!hasMachinery(card)) {
+              get().addLog(
+                'Las armas deben equiparse a un aliado (arrástrala sobre él).',
+                'error'
+              );
+              return;
+            }
+            const paid    = player.gold.slice(player.gold.length - card.coste);
+            const remaining = player.gold.slice(0, player.gold.length - card.coste);
             updated = {
               ...updated,
               supportField: [...player.supportField, card],
-              goldCount: player.goldCount - card.coste,
+              gold:     remaining,
+              goldPaid: [...player.goldPaid, ...paid],
+              goldCount: remaining.length,
             };
-            get().addLog(`${player.name} jugó la tierra ${card.nombre}.`);
+            get().addLog(
+              `${player.name} jugó la maquinaria ${card.nombre} en la línea de apoyo.`
+            );
             break;
+          }
         }
 
+        const paidGold = card.tipo !== 'oro' && card.coste > 0;
         set((s) => ({
-          players: { ...s.players, [playerId]: updated },
+          players: {
+            ...s.players,
+            [playerId]: paidGold
+              ? { ...updated, goldSpentThisTurn: true }
+              : updated,
+          },
           turn: {
             ...s.turn,
             cardsPlayedThisTurn: s.turn.cardsPlayedThisTurn + 1,
-            goldPlayedThisTurn:
-              card.tipo === 'oro'
-                ? s.turn.goldPlayedThisTurn + 1
-                : s.turn.goldPlayedThisTurn,
+            goldPlayedThisTurn: card.tipo === 'oro'
+              ? s.turn.goldPlayedThisTurn + 1
+              : s.turn.goldPlayedThisTurn,
           },
         }));
 
@@ -236,69 +334,351 @@ export const useGameStore = create<GameStore>()(
         const newGraveyard = prevWeapon ? [...player.graveyard, prevWeapon] : player.graveyard;
         const ally = player.defenseField.find((c) => c.instanceId === allyInstanceId);
 
-        set((s) => ({
-          players: {
-            ...s.players,
-            [playerId]: {
-              ...s.players[playerId],
-              hand: newHand,
-              graveyard: newGraveyard,
-              goldCount: s.players[playerId].goldCount - weapon.coste,
-              equippedWeapons: {
-                ...s.players[playerId].equippedWeapons,
-                [allyInstanceId]: weapon,
+        set((s) => {
+          const p = s.players[playerId];
+          const paid      = p.gold.slice(p.gold.length - weapon.coste);
+          const remaining = p.gold.slice(0, p.gold.length - weapon.coste);
+          return {
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                hand: newHand,
+                graveyard: newGraveyard,
+                gold:     remaining,
+                goldPaid: [...p.goldPaid, ...paid],
+                goldCount: remaining.length,
+                equippedWeapons: {
+                  ...p.equippedWeapons,
+                  [allyInstanceId]: weapon,
+                },
               },
             },
-          },
-          turn: { ...s.turn, cardsPlayedThisTurn: s.turn.cardsPlayedThisTurn + 1 },
-        }));
+            turn: { ...s.turn, cardsPlayedThisTurn: s.turn.cardsPlayedThisTurn + 1 },
+          };
+        });
 
         get().addLog(
           `${player.name} equipó ${weapon.nombre} a ${ally?.nombre ?? 'aliado'} (+${weapon.bonusFuerza ?? 0} ⚔).`
         );
       },
 
-      // ── Ally attacks → moves to attack line ───────────────────────────────
-      attackWithAlly: (allyInstanceId, playerId) => {
-        const { players, turn } = get();
+      // ── Declare attack: defense → attack line + open defense window ───────
+      declareAttack: (allyInstanceId, playerId) => {
+        const { players, turn, combat } = get();
         const player = players[playerId];
 
-        if (turn.currentPlayer !== playerId) {
-          get().addLog('No es tu turno.', 'error');
+        if (combat) {
+          get().addLog('Ya hay un combate en curso.', 'error');
           return;
         }
-        if (turn.phase !== 'batalla') {
-          get().addLog('Solo puedes atacar en la Batalla Mitológica.', 'error');
-          return;
-        }
-
         const ally = player.defenseField.find((c) => c.instanceId === allyInstanceId);
         if (!ally) return;
-        if (ally.attackedThisTurn) {
-          get().addLog(`${ally.nombre} ya atacó este turno.`, 'error');
+
+        const { allowed, reason } = canDeclareAttack(ally, turn, playerId);
+        if (!allowed) {
+          get().addLog(reason ?? 'No puedes atacar con ese aliado.', 'error');
           return;
         }
 
-        // Move ally from defense to attack line
-        const newDefense = player.defenseField.filter((c) => c.instanceId !== allyInstanceId);
+        const defenderId: PlayerId = playerId === 'player' ? 'opponent' : 'player';
         const attackingAlly: CardInPlay = { ...ally, attackedThisTurn: true, tapped: true };
+        // 'fuerza_inmutable' rival en juego: el aliado pelea con su fuerza impresa.
+        const bonus = strengthLockedFor(playerId, players)
+          ? 0
+          : player.equippedWeapons[allyInstanceId]?.bonusFuerza ?? 0;
 
+        // Declaring an attack jumps the game straight into the battle phase.
         set((s) => ({
+          turn: { ...s.turn, phase: 'batalla' },
+          combat: {
+            attackerId: playerId,
+            attackerInstanceId: allyInstanceId,
+            defenderInstanceId: null,
+            status: 'awaiting_defense',
+            activePlayer: defenderId,
+            consecutivePasses: 0,
+          },
           players: {
             ...s.players,
             [playerId]: {
               ...s.players[playerId],
-              defenseField: newDefense,
+              defenseField: s.players[playerId].defenseField.filter(
+                (c) => c.instanceId !== allyInstanceId
+              ),
               attackField: [...s.players[playerId].attackField, attackingAlly],
             },
           },
         }));
 
-        const bonus = player.equippedWeapons[allyInstanceId]?.bonusFuerza ?? 0;
         get().addLog(
-          `${player.name} ataca con ${ally.nombre} (${ally.fuerza + bonus} ⚔) → Línea de Ataque.`,
+          `${player.name} ataca con ${ally.nombre} (${ally.fuerza + bonus} ⚔). ${players[defenderId].name} puede defender.`,
           'combat'
         );
+
+        // No defenders available → resolve immediately as undefended.
+        if (players[defenderId].defenseField.length === 0) {
+          get().defendWith(null, defenderId);
+        }
+      },
+
+      // ── Defender chooses an ally (or null) → combat resolution ────────────
+      // ── Declaración de bloqueo → inicia la Guerra de Talismanes ───────────
+      // El defensor elige un aliado (o null = no defender). NO se resuelve el
+      // daño todavía: se pasa a la sub-fase 'talisman_war', donde ambos
+      // jugadores pueden jugar talismanes/habilidades empezando por el defensor.
+      defendWith: (defenderInstanceId, playerId) => {
+        const { players, combat } = get();
+        if (!combat || combat.status !== 'awaiting_defense') return;
+
+        const defenderId: PlayerId = combat.attackerId === 'player' ? 'opponent' : 'player';
+        if (playerId !== defenderId) {
+          get().addLog('Solo el jugador atacado puede defender.', 'error');
+          return;
+        }
+
+        const defenderPlayer = players[defenderId];
+        const blocker = defenderInstanceId
+          ? defenderPlayer.defenseField.find((c) => c.instanceId === defenderInstanceId) ?? null
+          : null;
+
+        set({
+          combat: {
+            ...combat,
+            defenderInstanceId: blocker ? defenderInstanceId : null,
+            status: 'talisman_war',
+            activePlayer: defenderId,
+            consecutivePasses: 0,
+          },
+        });
+
+        get().addLog(
+          blocker
+            ? `${defenderPlayer.name} bloquea con ${blocker.nombre}.`
+            : `${defenderPlayer.name} no declara bloqueo.`,
+          'combat'
+        );
+
+        // 'castigo_bloqueo': si el atacante tiene la habilidad y fue bloqueado,
+        // el defensor bota 6 cartas de su Mazo Castillo al Cementerio.
+        const attackerCard = players[combat.attackerId].attackField.find(
+          (c) => c.instanceId === combat.attackerInstanceId
+        );
+        if (blocker && attackerCard && hasBlockPunishment(attackerCard)) {
+          const milled = Math.min(BLOCK_PUNISHMENT_MILL, defenderPlayer.deck.length);
+          if (milled > 0) {
+            const lost = defenderPlayer.deck.slice(0, milled).map(createCardInPlay);
+            set((s) => ({
+              players: {
+                ...s.players,
+                [defenderId]: {
+                  ...s.players[defenderId],
+                  deck: s.players[defenderId].deck.slice(milled),
+                  graveyard: [...s.players[defenderId].graveyard, ...lost],
+                  life: s.players[defenderId].deck.length - milled,
+                },
+              },
+            }));
+            get().addLog(
+              `${attackerCard.nombre} fue bloqueado: ${defenderPlayer.name} bota ${milled} carta(s) de su Mazo Castillo al Cementerio.`,
+              'combat'
+            );
+            const { isOver, winnerId } = checkGameOver(get().players);
+            if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
+          }
+        }
+        get().addLog(
+          `Guerra de Talismanes: ${defenderPlayer.name} puede jugar talismanes o pasar.`,
+          'combat'
+        );
+      },
+
+      // ── Guerra de Talismanes: pasar ───────────────────────────────────────
+      // Si ambos jugadores pasan consecutivamente, se asigna el daño.
+      passCombat: (playerId) => {
+        const { players, combat } = get();
+        if (!combat || combat.status !== 'talisman_war') return;
+        if (playerId !== combat.activePlayer) {
+          get().addLog('No es tu turno en la Guerra de Talismanes.', 'error');
+          return;
+        }
+
+        const passes = combat.consecutivePasses + 1;
+        if (passes >= 2) {
+          get().addLog('Ambos jugadores pasan: se asigna el daño.', 'combat');
+          get().resolveCombat();
+          return;
+        }
+
+        const other: PlayerId = playerId === 'player' ? 'opponent' : 'player';
+        set({ combat: { ...combat, consecutivePasses: passes, activePlayer: other } });
+        get().addLog(`${players[playerId].name} pasa. Turno de ${players[other].name}.`, 'combat');
+      },
+
+      // ── Guerra de Talismanes: jugar un talismán ───────────────────────────
+      // El jugador activo paga su coste; el talismán va al cementerio. Reinicia
+      // el contador de pases y cede el turno al oponente.
+      playCombatTalisman: (card, playerId) => {
+        const { players, combat } = get();
+        if (!combat || combat.status !== 'talisman_war') return;
+        if (playerId !== combat.activePlayer) {
+          get().addLog('No es tu turno en la Guerra de Talismanes.', 'error');
+          return;
+        }
+        if (card.tipo !== 'talisman') {
+          get().addLog('En la Guerra de Talismanes solo puedes jugar talismanes.', 'error');
+          return;
+        }
+        const player = players[playerId];
+        if (card.coste > player.goldCount + player.talismanGold) {
+          get().addLog(`Necesitas ${card.coste} de oro para jugar ${card.nombre}.`, 'error');
+          return;
+        }
+
+        const withoutCard = player.hand.filter((c) => c.instanceId !== card.instanceId);
+        // Se pagan primero con oros virtuales 'oro_talismanes' (si hay).
+        const fromVirtual = Math.min(player.talismanGold, card.coste);
+        const fromCards   = card.coste - fromVirtual;
+        const paid      = player.gold.slice(player.gold.length - fromCards);
+        const remaining = player.gold.slice(0, player.gold.length - fromCards);
+        const other: PlayerId = playerId === 'player' ? 'opponent' : 'player';
+
+        set((s) => ({
+          players: {
+            ...s.players,
+            [playerId]: {
+              ...player,
+              hand: withoutCard,
+              graveyard: [...player.graveyard, card],
+              gold:      remaining,
+              goldPaid:  [...player.goldPaid, ...paid],
+              goldCount: remaining.length,
+              talismanGold: player.talismanGold - fromVirtual,
+              goldSpentThisTurn: fromCards > 0 ? true : player.goldSpentThisTurn,
+            },
+          },
+          combat: { ...combat, consecutivePasses: 0, activePlayer: other },
+        }));
+
+        get().addLog(
+          `${player.name} juega ${card.nombre} en la Guerra de Talismanes: "${card.habilidad}". Turno de ${players[other].name}.`,
+          'combat'
+        );
+      },
+
+      // ── Asignación de daño (fin de la Guerra de Talismanes) ───────────────
+      resolveCombat: () => {
+        const { players, combat } = get();
+        if (!combat) return;
+
+        const defenderId: PlayerId = combat.attackerId === 'player' ? 'opponent' : 'player';
+        const attackerPlayer = players[combat.attackerId];
+        const defenderPlayer = players[defenderId];
+
+        const attacker = attackerPlayer.attackField.find(
+          (c) => c.instanceId === combat.attackerInstanceId
+        );
+        if (!attacker) {
+          set({ combat: null });
+          return;
+        }
+
+        const defender = combat.defenderInstanceId
+          ? defenderPlayer.defenseField.find((c) => c.instanceId === combat.defenderInstanceId) ?? null
+          : null;
+
+        // 'fuerza_inmutable' rival en juego: ese bando pelea con su fuerza
+        // impresa (se ignoran bonos de armas y temporales).
+        const atkForce = strengthLockedFor(combat.attackerId, players)
+          ? attacker.fuerza
+          : attacker.fuerza +
+            (attackerPlayer.equippedWeapons[attacker.instanceId]?.bonusFuerza ?? 0) +
+            (attackerPlayer.weaponTempBonuses[attacker.instanceId] ?? 0);
+        const defForce = defender
+          ? strengthLockedFor(defenderId, players)
+            ? defender.fuerza
+            : defender.fuerza +
+              (defenderPlayer.equippedWeapons[defender.instanceId]?.bonusFuerza ?? 0) +
+              (defenderPlayer.weaponTempBonuses[defender.instanceId] ?? 0)
+          : null;
+
+        const outcome = resolveInteractiveCombat(atkForce, defForce);
+
+        // Destroys an ally: card + equipped weapon go to its owner's graveyard.
+        // 'Indestructible' allies survive destruction and stay on the table.
+        const destroyAlly = (owner: PlayerState, instanceId: string): PlayerState => {
+          const inAttack = owner.attackField.find((c) => c.instanceId === instanceId);
+          const inDefense = owner.defenseField.find((c) => c.instanceId === instanceId);
+          const card = inAttack ?? inDefense;
+          if (!card) return owner;
+          if (hasIndestructible(card)) return owner;
+          const weapon = owner.equippedWeapons[instanceId];
+          const { [instanceId]: _, ...restWeapons } = owner.equippedWeapons;
+          return {
+            ...owner,
+            attackField: owner.attackField.filter((c) => c.instanceId !== instanceId),
+            defenseField: owner.defenseField.filter((c) => c.instanceId !== instanceId),
+            graveyard: [...owner.graveyard, card, ...(weapon ? [weapon] : [])],
+            equippedWeapons: restWeapons,
+          };
+        };
+
+        let newAttacker = attackerPlayer;
+        let newDefender = defenderPlayer;
+
+        if (outcome.attackerDestroyed) {
+          newAttacker = destroyAlly(newAttacker, attacker.instanceId);
+        }
+        if (outcome.defenderDestroyed && defender) {
+          newDefender = destroyAlly(newDefender, defender.instanceId);
+        }
+        if (outcome.deckDamage > 0) {
+          const damaged = Math.min(outcome.deckDamage, newDefender.deck.length);
+          const lost = newDefender.deck.slice(0, damaged).map(createCardInPlay);
+          newDefender = {
+            ...newDefender,
+            deck: newDefender.deck.slice(damaged),
+            graveyard: [...newDefender.graveyard, ...lost],
+            life: newDefender.deck.length - damaged,
+          };
+        }
+
+        set((s) => ({
+          combat: null,
+          players: {
+            ...s.players,
+            [combat.attackerId]: newAttacker,
+            [defenderId]: newDefender,
+          },
+        }));
+
+
+        // Combat log
+        if (!defender) {
+          get().addLog(
+            `${defenderPlayer.name} no defendió: ${outcome.deckDamage} carta(s) del Mazo Castillo van al cementerio.`,
+            'combat'
+          );
+        } else if (outcome.attackerDestroyed && outcome.defenderDestroyed) {
+          const atkFate = hasIndestructible(attacker) ? `${attacker.nombre} sobrevive (Indestructible)` : `${attacker.nombre} es destruido`;
+          const defFate = hasIndestructible(defender) ? `${defender.nombre} sobrevive (Indestructible)` : `${defender.nombre} es destruido`;
+          get().addLog(`Empate ${atkForce} ⚔ ${defForce}: ${atkFate}; ${defFate}.`, 'combat');
+        } else if (outcome.defenderDestroyed) {
+          const defFate = hasIndestructible(defender) ? 'el defensor sobrevive (Indestructible)' : 'defensor destruido';
+          get().addLog(
+            `${attacker.nombre} (${atkForce}) vence a ${defender.nombre} (${defForce}): ${defFate} y ${outcome.deckDamage} carta(s) del mazo de ${defenderPlayer.name} al cementerio.`,
+            'combat'
+          );
+        } else {
+          const atkFate = hasIndestructible(attacker) ? 'el atacante sobrevive (Indestructible)' : 'atacante destruido';
+          get().addLog(
+            `${defender.nombre} (${defForce}) detiene a ${attacker.nombre} (${atkForce}): ${atkFate}.`,
+            'combat'
+          );
+        }
+
+        const { isOver, winnerId } = checkGameOver(get().players);
+        if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
       },
 
       // ── Tap / untap ───────────────────────────────────────────────────────
@@ -316,9 +696,103 @@ export const useGameStore = create<GameStore>()(
         }));
       },
 
+      // ── Regroup gold ──────────────────────────────────────────────────────
+      // Mueve todas las cartas de goldPaid → gold, restaurando los oros disponibles.
+      regroupGold: (playerId) => {
+        const { players, turn } = get();
+        const player = players[playerId];
+
+        if (turn.currentPlayer !== playerId) {
+          get().addLog('No es tu turno.', 'error');
+          return;
+        }
+        if (turn.phase !== 'agrupacion') {
+          get().addLog('Solo puedes reagrupar durante la fase de Agrupación.', 'error');
+          return;
+        }
+        if (player.goldPaid.length === 0) return;
+
+        const newGold = [...player.gold, ...player.goldPaid];
+
+        set((s) => ({
+          players: {
+            ...s.players,
+            [playerId]: {
+              ...s.players[playerId],
+              gold:     newGold,
+              goldPaid: [],
+              goldCount: newGold.length,
+            },
+          },
+        }));
+
+        get().addLog(
+          `${player.name} reagrupó ${player.goldPaid.length} oro(s). Disponibles: ${newGold.length}.`
+        );
+
+        // Si ya no queda nada por reagrupar, la Agrupación terminó → Vigilia.
+        if (player.attackField.length === 0) {
+          set((s) => ({ turn: { ...s.turn, phase: 'vigilia' } }));
+          get().addLog('Nada más que reagrupar — Fase: Vigilia.', 'system');
+        }
+      },
+
+      // ── Regroup allies ────────────────────────────────────────────────────
+      // Mueve los aliados de la línea de ataque → línea de defensa y los endereza.
+      regroupAllies: (playerId) => {
+        const { players, turn } = get();
+        const player = players[playerId];
+
+        if (turn.currentPlayer !== playerId) {
+          get().addLog('No es tu turno.', 'error');
+          return;
+        }
+        if (turn.phase !== 'agrupacion') {
+          get().addLog('Solo puedes reagrupar durante la fase de Agrupación.', 'error');
+          return;
+        }
+        if (player.attackField.length === 0) return;
+
+        const count = player.attackField.length;
+        const returned = player.attackField.map((c) => ({
+          ...c,
+          tapped: false,
+          attackedThisTurn: false,
+        }));
+        const untappedDefense = player.defenseField.map((c) => ({
+          ...c,
+          tapped: false,
+        }));
+
+        set((s) => ({
+          players: {
+            ...s.players,
+            [playerId]: {
+              ...s.players[playerId],
+              defenseField: [...untappedDefense, ...returned],
+              attackField: [],
+            },
+          },
+        }));
+
+        get().addLog(
+          `${player.name} reagrupó ${count} aliado(s) a la línea de defensa.`
+        );
+
+        // Si ya no queda nada por reagrupar, la Agrupación terminó → Vigilia.
+        if (player.goldPaid.length === 0) {
+          set((s) => ({ turn: { ...s.turn, phase: 'vigilia' } }));
+          get().addLog('Nada más que reagrupar — Fase: Vigilia.', 'system');
+        }
+      },
+
       // ── Advance phase ─────────────────────────────────────────────────────
       // Fases MYL: Agrupación → Vigilia → Batalla Mitológica → Fase Final
       advancePhase: () => {
+        if (get().combat) {
+          get().addLog('Hay un combate pendiente: primero se debe defender.', 'error');
+          return;
+        }
         const phases: TurnPhase[] = ['agrupacion', 'vigilia', 'batalla', 'final'];
         const { turn } = get();
         const idx = phases.indexOf(turn.phase);
@@ -335,30 +809,51 @@ export const useGameStore = create<GameStore>()(
           final:      'Fase Final',
         };
         get().addLog(`Fase: ${LABELS[next]}`, 'system');
+
       },
 
       // ── End turn ──────────────────────────────────────────────────────────
-      // Al cambiar de turno:
-      //  1. Agrupación automática: todas las cartas del siguiente jugador se enderezan
-      //  2. Se roba 1 carta del Mazo Castillo
-      //  3. La fase inicia en 'vigilia'
+      // Al finalizar el turno:
+      //  1. El jugador actual roba 1 carta de su Mazo Castillo
+      //  2. El turno pasa al siguiente jugador. Si tiene algo que reagrupar
+      //     (oro pagado o aliados en ataque) arranca en 'agrupacion'; si no,
+      //     se salta directo a 'vigilia' para evitar un paso vacío.
       endTurn: () => {
+        if (get().combat) {
+          get().addLog('Hay un combate pendiente: primero se debe defender.', 'error');
+          return;
+        }
         const { turn, players } = get();
-        const nextId: PlayerId = turn.currentPlayer === 'player' ? 'opponent' : 'player';
+        const currentId = turn.currentPlayer;
+        const nextId: PlayerId = currentId === 'player' ? 'opponent' : 'player';
         const nextTurn = nextId === 'player' ? turn.turnNumber + 1 : turn.turnNumber;
-        const next = players[nextId];
 
-        // Agrupación: todos los aliados del siguiente jugador se enderezan
-        const allAllies = [...next.defenseField, ...next.attackField].map((c) => ({
-          ...c,
-          tapped: false,
-          attackedThisTurn: false,
-        }));
+        const current = players[currentId];
+        const next    = players[nextId];
+
+        const nextHasRegroup = next.goldPaid.length > 0 || next.attackField.length > 0;
+        const nextPhase: TurnPhase = nextHasRegroup ? 'agrupacion' : 'vigilia';
+
+        // Robar 1 carta del Mazo Castillo para el jugador que finaliza su turno
+        let updatedCurrent = current;
+        let drewCard = false;
+        if (current.deck.length > 0) {
+          const { drawn, remaining } = drawCards(current.deck, 1);
+          const newCard = createCardInPlay(drawn[0]);
+          updatedCurrent = {
+            ...current,
+            deck: remaining,
+            hand: [...current.hand, newCard],
+            drawnThisTurn: true,
+            life: remaining.length,
+          };
+          drewCard = true;
+        }
 
         set((s) => ({
           turn: {
             currentPlayer: nextId,
-            phase: 'vigilia',
+            phase: nextPhase,
             turnNumber: nextTurn,
             cardsPlayedThisTurn: 0,
             goldPlayedThisTurn: 0,
@@ -366,22 +861,190 @@ export const useGameStore = create<GameStore>()(
           isBoardRotating: false,
           players: {
             ...s.players,
+            [currentId]: {
+              ...updatedCurrent,
+              weaponTempBonuses: {},
+              // Los oros virtuales 'oro_talismanes' expiran al terminar el turno.
+              talismanGold: 0,
+            },
             [nextId]: {
               ...next,
-              defenseField: allAllies,
-              attackField: [],
               drawnThisTurn: false,
+              goldSpentThisTurn: false,
+              talismanGold: 0,
+              weaponTempBonuses: {},
+              weaponAbilityUsedThisTurn: [],
+              allyAbilityUsedThisTurn: [],
+              // Los aliados que entraron el turno anterior ya llevan en juego
+              // desde esta Agrupación: pueden atacar este turno.
+              defenseField: next.defenseField.map((c) => ({ ...c, summonedThisTurn: false })),
+              attackField: next.attackField.map((c) => ({ ...c, summonedThisTurn: false })),
             },
           },
         }));
 
-        // Auto-draw from Mazo Castillo
-        get().drawCard(nextId);
-        get().addLog(`Turno ${nextTurn}: es el turno de ${players[nextId].name}.`, 'system');
+        if (drewCard) {
+          get().addLog(`${current.name} robó una carta del Mazo Castillo al finalizar su turno.`);
+        } else {
+          get().addLog(`${current.name}: ¡Mazo Castillo vacío! No se robó carta.`, 'system');
+        }
+        get().addLog(
+          `Turno ${nextTurn}: turno de ${players[nextId].name} — ${nextPhase === 'agrupacion' ? 'Agrupación' : 'Vigilia'}.`,
+          'system'
+        );
       },
 
-      initGame: () => set(buildInitialState()),
+      initGame: (deckPlayer, deckOpponent) => set(buildInitialState(deckPlayer, deckOpponent)),
       resetGame: () => set(buildInitialState()),
+
+      surrender: (loserId) => {
+        const winnerId: PlayerId = loserId === 'player' ? 'opponent' : 'player';
+        const loserName = get().players[loserId].name;
+        get().addLog(`${loserName} se ha rendido.`, 'system');
+        set({ isGameOver: true, winner: winnerId, combat: null });
+      },
+
+      activateWeaponAbility: (weaponInstanceId, allyInstanceId, playerId) => {
+        const player = get().players[playerId];
+        if (strengthLockedFor(playerId, get().players)) {
+          get().addLog(
+            'Una carta rival en juego impide modificar la Fuerza de tus aliados.',
+            'error'
+          );
+          return;
+        }
+        if (player.goldCount < 1) {
+          get().addLog('No tienes oro suficiente para activar esta habilidad.', 'error');
+          return;
+        }
+        if (player.weaponAbilityUsedThisTurn.includes(weaponInstanceId)) {
+          get().addLog('Esta habilidad ya fue usada este turno.', 'error');
+          return;
+        }
+        // Pagar 1 oro: mover el último oro disponible a goldPaid
+        const paid = player.gold[player.gold.length - 1];
+        const newGold = player.gold.slice(0, -1);
+        const weapon = player.equippedWeapons[allyInstanceId];
+        const weaponName = weapon?.nombre ?? 'El arma';
+        set((s) => ({
+          players: {
+            ...s.players,
+            [playerId]: {
+              ...s.players[playerId],
+              gold: newGold,
+              goldPaid: [...s.players[playerId].goldPaid, paid],
+              goldCount: s.players[playerId].goldCount - 1,
+              weaponTempBonuses: {
+                ...s.players[playerId].weaponTempBonuses,
+                [allyInstanceId]: (s.players[playerId].weaponTempBonuses[allyInstanceId] ?? 0) + 2,
+              },
+              weaponAbilityUsedThisTurn: [
+                ...s.players[playerId].weaponAbilityUsedThisTurn,
+                weaponInstanceId,
+              ],
+            },
+          },
+        }));
+        get().addLog(`${weaponName}: ¡el portador gana +2 de Fuerza hasta la Fase Final!`, 'action');
+      },
+
+      activateGoldTalisman: (goldInstanceId, playerId) => {
+        const { players, isGameOver } = get();
+        if (isGameOver) return;
+        const player = players[playerId];
+        const goldCard = player.gold.find((c) => c.instanceId === goldInstanceId);
+        if (!goldCard || !hasGoldTalismanAbility(goldCard)) return;
+
+        // Sin restricción de turno: la habilidad es activable también en el
+        // turno del oponente (el propietario decide cuándo pagar su oro).
+        set((s) => {
+          const p = s.players[playerId];
+          const remaining = p.gold.filter((c) => c.instanceId !== goldInstanceId);
+          return {
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                gold: remaining,
+                goldPaid: [...p.goldPaid, goldCard],
+                goldCount: remaining.length,
+                talismanGold: p.talismanGold + GOLD_TALISMAN_YIELD,
+                goldSpentThisTurn: true,
+              },
+            },
+          };
+        });
+        get().addLog(
+          `${player.name} pagó ${goldCard.nombre}: genera ${GOLD_TALISMAN_YIELD} Oros que solo pueden pagar Talismanes (hasta el final del turno).`,
+          'action'
+        );
+      },
+
+      summonCaudilloFromDeck: (sourceInstanceId, deckIndex, playerId) => {
+        const { players, combat } = get();
+        const player = players[playerId];
+
+        const source =
+          player.defenseField.find((c) => c.instanceId === sourceInstanceId) ??
+          player.attackField.find((c) => c.instanceId === sourceInstanceId);
+        if (!source || !hasCaudilloSummon(source)) return;
+
+        if (combat) {
+          get().addLog('No puedes invocar durante un combate pendiente.', 'error');
+          return;
+        }
+        if (player.allyAbilityUsedThisTurn.includes(sourceInstanceId)) {
+          get().addLog(`La habilidad de ${source.nombre} ya fue usada este turno.`, 'error');
+          return;
+        }
+        if (player.goldCount < CAUDILLO_SUMMON_GOLD_COST) {
+          get().addLog(`Necesitas ${CAUDILLO_SUMMON_GOLD_COST} oros disponibles para activar esta habilidad.`, 'error');
+          return;
+        }
+        const target = player.deck[deckIndex];
+        if (!target || !isSummonableByCaudillo(target, source)) {
+          get().addLog('Esa carta no puede invocarse con esta habilidad.', 'error');
+          return;
+        }
+
+        // Paga 3 oros (van a la zona P) y saca la carta del Mazo Castillo.
+        const paid = player.gold.slice(player.gold.length - CAUDILLO_SUMMON_GOLD_COST);
+        const remainingGold = player.gold.slice(0, player.gold.length - CAUDILLO_SUMMON_GOLD_COST);
+        const newDeck = player.deck.filter((_, i) => i !== deckIndex);
+
+        set((s) => ({
+          players: {
+            ...s.players,
+            [playerId]: {
+              ...s.players[playerId],
+              deck: newDeck,
+              life: newDeck.length,
+              defenseField: [
+                ...s.players[playerId].defenseField,
+                { ...createCardInPlay(target), summonedThisTurn: true },
+              ],
+              gold: remainingGold,
+              goldPaid: [...s.players[playerId].goldPaid, ...paid],
+              goldCount: remainingGold.length,
+              goldSpentThisTurn: true,
+              allyAbilityUsedThisTurn: [
+                ...s.players[playerId].allyAbilityUsedThisTurn,
+                sourceInstanceId,
+              ],
+            },
+          },
+        }));
+
+        get().addLog(
+          `${source.nombre} paga ${CAUDILLO_SUMMON_GOLD_COST} oros e invoca a ${target.nombre} desde el Mazo Castillo sin pagar su coste.`,
+          'action'
+        );
+
+        const { isOver, winnerId } = checkGameOver(get().players);
+        if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
+      },
+
+      hydrateState: (state) => set(state),
 
       addLog: (msg, type = 'action') => {
         set((s) => ({

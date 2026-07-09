@@ -4,7 +4,7 @@ import { CardView } from './CardView';
 import { CardDetail } from './CardDetail';
 import { useGameActions } from '@/hooks/useGameActions';
 import { useGameStore } from '@/store/gameStore';
-import { canPlayCard } from '@/utils/gameRules';
+import { canPlayCard, hasMachinery } from '@/utils/gameRules';
 import type { PlayerId } from '@/types/game.types';
 
 interface PlayerHandProps {
@@ -24,15 +24,6 @@ export function PlayerHand({ cards, playerId, isOpponent = false }: PlayerHandPr
     setDetailCard(card);
   };
 
-  const handleDragStart = (e: React.DragEvent, card: CardInPlay) => {
-    if (isOpponent) return;
-    e.dataTransfer.setData(
-      'application/json',
-      JSON.stringify({ card, sourceZone: 'hand', sourcePlayer: playerId })
-    );
-    e.dataTransfer.effectAllowed = 'move';
-  };
-
   const canPlay = detailCard ? canPlayCard(detailCard, player, turn).allowed : false;
 
   return (
@@ -43,16 +34,18 @@ export function PlayerHand({ cards, playerId, isOpponent = false }: PlayerHandPr
         )}
         {cards.map((card) =>
           isOpponent ? (
-            <CardView key={card.instanceId} card={card} faceDown compact />
+            <div key={card.instanceId} className="card-enter">
+              <CardView card={card} faceDown size="xs" />
+            </div>
           ) : (
-            <CardView
-              key={card.instanceId}
-              card={card}
-              onClick={handleCardClick}
-              isSelected={detailCard?.instanceId === card.instanceId}
-              draggable
-              onDragStart={handleDragStart}
-            />
+            <div key={card.instanceId} className="card-enter">
+              <CardView
+                card={card}
+                onClick={handleCardClick}
+                isSelected={detailCard?.instanceId === card.instanceId}
+                dragPayload={{ card, sourceZone: 'hand', sourcePlayer: playerId }}
+              />
+            </div>
           )
         )}
       </div>
@@ -63,8 +56,9 @@ export function PlayerHand({ cards, playerId, isOpponent = false }: PlayerHandPr
           isOpen={!!detailCard}
           onClose={() => setDetailCard(null)}
           onPlay={(c) => {
-            // Weapons dragged onto allies; other cards play to their zone
-            if (c.tipo !== 'arma') playCard(c, playerId);
+            // Weapons are dragged onto allies, except machinery weapons
+            // which play to the support line like a totem
+            if (c.tipo !== 'arma' || hasMachinery(c)) playCard(c, playerId);
           }}
           canPlay={canPlay}
         />

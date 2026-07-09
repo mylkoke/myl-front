@@ -1,0 +1,39 @@
+# Render Blueprint — deploy the NestJS backend (free tier)
+# Dashboard: create a Blueprint from this repo, or create a Web Service
+# manually with Root Directory = server.
+services:
+  - type: web
+    name: myl-server
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm run start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: SEED_ADMIN_USERNAME
+        sync: false
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      # Subida de imágenes de cartas a Google Drive vía Apps Script
+      # (ver server/scripts/gdrive-apps-script.gs)
+      - key: GAS_UPLOAD_URL
+        sync: false
+      - key: GAS_UPLOAD_TOKEN
+        sync: false

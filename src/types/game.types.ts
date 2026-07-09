@@ -4,7 +4,7 @@ export type ZoneId =
   | 'hand'
   | 'defense'      // Línea de Defensa (aliados en posición defensiva)
   | 'attack'       // Línea de Ataque (aliados que atacaron este turno)
-  | 'support'      // Línea de Apoyo (tótems y tierras)
+  | 'support'      // Línea de Apoyo (tótems y maquinarias)
   | 'deck'         // M — Mazo Castillo
   | 'graveyard'    // + — Cementerio
   | 'goldPaid'     // P — Zona de oro pagado
@@ -32,7 +32,7 @@ export interface PlayerState {
   defenseField: CardInPlay[];
   /** Línea de Ataque: aliados que atacaron este turno (quedan sitiados) */
   attackField: CardInPlay[];
-  /** Línea de Apoyo: tótems y tierras permanentes */
+  /** Línea de Apoyo: tótems y armas con maquinaria (permanentes) */
   supportField: CardInPlay[];
 
   /** O — Oros disponibles (cartas de tipo oro jugadas) */
@@ -48,11 +48,24 @@ export interface PlayerState {
 
   /** Armas equipadas: key = instanceId del aliado, value = arma */
   equippedWeapons: Record<string, CardInPlay>;
+  /** Bonos de fuerza temporales activos (hasta Fase Final): key = allyInstanceId */
+  weaponTempBonuses: Record<string, number>;
+  /** instanceIds de armas cuya habilidad activada ya se usó este turno */
+  weaponAbilityUsedThisTurn: string[];
+  /** instanceIds de aliados cuya habilidad activada ya se usó este turno */
+  allyAbilityUsedThisTurn: string[];
 
   // ── Estado del jugador ─────────────────────────────────────────────────
   life: number;
   goldCount: number;
+  /**
+   * Oros virtuales generados por habilidades (p.ej. 'oro_talismanes'):
+   * SOLO sirven para pagar talismanes y expiran al terminar el turno.
+   */
+  talismanGold: number;
   drawnThisTurn: boolean;
+  /** True si el jugador pagó oro durante este turno; bloquea reagrupar oro. */
+  goldSpentThisTurn: boolean;
 }
 
 export interface TurnState {
@@ -64,9 +77,31 @@ export interface TurnState {
   goldPlayedThisTurn: number;
 }
 
+/**
+ * Interactive combat (sub-fases de la Batalla Mitológica): set when an attack
+ * is declared, cleared on damage resolution.
+ *
+ * - `awaiting_defense`: el DEFENSOR declara bloqueo (elige aliado o no defiende).
+ * - `talisman_war`: Guerra de Talismanes. Tras el bloqueo, ambos jugadores
+ *   pueden jugar talismanes / activar habilidades, empezando por el defensor y
+ *   alternándose. Termina cuando ambos pasan consecutivamente → asignación de daño.
+ */
+export interface CombatState {
+  attackerId: PlayerId;
+  attackerInstanceId: string;
+  /** Aliado bloqueador elegido por el defensor (null = no defendió). */
+  defenderInstanceId: string | null;
+  status: 'awaiting_defense' | 'talisman_war';
+  /** Guerra de Talismanes: a quién le toca actuar (parte el defensor). */
+  activePlayer: PlayerId;
+  /** Pasos consecutivos sin jugar nada; al llegar a 2 se resuelve el combate. */
+  consecutivePasses: number;
+}
+
 export interface GameState {
   players: Record<PlayerId, PlayerState>;
   turn: TurnState;
+  combat: CombatState | null;
   selectedCard: CardInPlay | null;
   isGameOver: boolean;
   winner: PlayerId | null;

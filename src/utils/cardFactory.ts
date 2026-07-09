@@ -13,6 +13,7 @@ export function createCardInPlay(card: Card): CardInPlay {
     instanceId: `${card.id}-${instanceCounter}-${Date.now()}`,
     tapped: false,
     attackedThisTurn: false,
+    summonedThisTurn: false,
   };
 }
 

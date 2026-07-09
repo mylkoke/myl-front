@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { CardInPlay } from '@/types/card.types';
-import { Badge } from '@/components/ui/Badge';
+import type { DragPayload } from '@/types/game.types';
+import type { CardSize } from '@/utils/cardSize';
+import { startPointerDrag } from '@/utils/dragManager';
 
 interface CardViewProps {
   card: CardInPlay;
@@ -8,24 +10,61 @@ interface CardViewProps {
   isSelected?: boolean;
   isOpponent?: boolean;
   faceDown?: boolean;
-  compact?: boolean;
-  draggable?: boolean;
-  onDragStart?: (e: React.DragEvent, card: CardInPlay) => void;
+  size?: CardSize;
+  /** Makes the card draggable (pointer events: works on mouse AND touch). */
+  dragPayload?: DragPayload;
 }
 
 const TYPE_COLORS: Record<string, string> = {
   aliado:  'from-blue-900 to-slate-900 border-blue-600/50',
   talisman:'from-purple-900 to-slate-900 border-purple-600/50',
   arma:    'from-red-900 to-slate-900 border-red-600/50',
-  tierra:  'from-green-900 to-slate-900 border-green-600/50',
   totem:   'from-emerald-900 to-slate-900 border-emerald-600/50',
   oro:     'from-yellow-800 to-yellow-950 border-yellow-500/70',
 };
 
-const SEAL_BADGE: Record<string, { label: string; variant: 'gold' | 'blue' | 'purple' }> = {
-  real: { label: 'R', variant: 'gold' },
-  'ultra real': { label: 'UR', variant: 'blue' },
-  'mega real': { label: 'MR', variant: 'purple' },
+// Width per breakpoint; height comes from aspect-[3/4] so the ratio is
+// identical at every step. Literal strings — Tailwind scans sources.
+const SIZE_CLASSES: Record<CardSize, string> = {
+  xs: 'w-9 sm:w-10 md:w-12',
+  sm: 'w-12 sm:w-14 md:w-16',
+  md: 'w-16 sm:w-20 md:w-24',
+  lg: 'w-20 sm:w-24 md:w-32',
+  xl: 'w-24 sm:w-32 md:w-40',
+};
+
+// Wrapper for tapped (rotated) cards: width = card height, height = card
+// width, so the rotated card fills its footprint without overlapping others.
+const TAPPED_WRAPPER_CLASSES: Record<CardSize, string> = {
+  xs: 'w-12 sm:w-[53px] md:w-16',
+  sm: 'w-16 sm:w-[75px] md:w-[85px]',
+  md: 'w-[85px] sm:w-[107px] md:w-32',
+  lg: 'w-[107px] sm:w-32 md:w-[171px]',
+  xl: 'w-32 sm:w-[171px] md:w-[214px]',
+};
+
+const BADGE_CLASSES: Record<CardSize, string> = {
+  xs: 'w-3.5 h-3.5 text-[7px]',
+  sm: 'w-4 h-4 text-[8px]',
+  md: 'w-5 h-5 text-[10px]',
+  lg: 'w-6 h-6 text-xs',
+  xl: 'w-7 h-7 text-sm',
+};
+
+const NAME_CLASSES: Record<CardSize, string> = {
+  xs: 'text-[8px]',
+  sm: 'text-[8px]',
+  md: 'text-[9px]',
+  lg: 'text-[11px]',
+  xl: 'text-sm',
+};
+
+const FORCE_BADGE_CLASSES: Record<CardSize, string> = {
+  xs: 'bottom-0.5 right-0.5 w-3 h-3 md:w-4 md:h-4 text-[7px] md:text-[8px]',
+  sm: 'bottom-0.5 right-0.5 w-3.5 h-3.5 md:w-4 md:h-4 text-[7px] md:text-[8px]',
+  md: 'bottom-1 right-1 w-4 h-4 md:w-5 md:h-5 text-[9px] md:text-[10px]',
+  lg: 'bottom-1 right-1 w-5 h-5 md:w-6 md:h-6 text-[10px] md:text-xs',
+  xl: 'bottom-1 right-1 w-6 h-6 md:w-7 md:h-7 text-xs md:text-sm',
 };
 
 export function CardView({
@@ -34,20 +73,19 @@ export function CardView({
   isSelected = false,
   isOpponent = false,
   faceDown = false,
-  compact = false,
-  draggable = false,
-  onDragStart,
+  size = 'md',
+  dragPayload,
 }: CardViewProps) {
   const [imageError, setImageError] = useState(false);
 
-  const typeGradient = TYPE_COLORS[card.tipo] ?? TYPE_COLORS.criatura;
-  const seal = SEAL_BADGE[card.tipoSello] ?? SEAL_BADGE.real;
+  const typeGradient = TYPE_COLORS[card.tipo] ?? TYPE_COLORS.aliado;
+  const isCompact = size === 'xs' || size === 'sm';
 
   const handleClick = () => onClick?.(card);
 
-  const handleDragStart = (e: React.DragEvent) => {
-    onDragStart?.(e, card);
-  };
+  const handlePointerDown = dragPayload
+    ? (e: React.PointerEvent) => startPointerDrag(e, dragPayload)
+    : undefined;
 
   if (faceDown) {
     return (
@@ -55,7 +93,8 @@ export function CardView({
         className={[
           'relative rounded-lg border-2 border-slate-600/60 cursor-default select-none',
           'bg-gradient-to-br from-slate-800 to-slate-900',
-          compact ? 'w-12 h-16' : 'w-24 h-32',
+          SIZE_CLASSES[size],
+          'aspect-[3/4]',
         ].join(' ')}
         style={isOpponent ? { transform: 'rotate(180deg)' } : undefined}
       >
@@ -67,77 +106,102 @@ export function CardView({
     );
   }
 
-  return (
+  const cardEl = (
     <div
-      draggable={draggable}
-      onDragStart={handleDragStart}
+      onPointerDown={handlePointerDown}
       onClick={handleClick}
+      // touch-action none on draggable cards so the drag gesture isn't
+      // hijacked by scrolling; the rest of the board scrolls normally.
+      style={dragPayload ? { touchAction: 'none' } : undefined}
       className={[
-        'relative rounded-lg border-2 cursor-pointer select-none transition-all duration-200',
+        'relative rounded-lg cursor-pointer select-none transition-all duration-200',
+        isCompact ? 'border' : 'border-2',
         `bg-gradient-to-br ${typeGradient}`,
-        compact ? 'w-12 h-16' : 'w-24 h-32',
+        SIZE_CLASSES[size],
+        'aspect-[3/4] flex-shrink-0',
         isSelected ? 'border-yellow-400 shadow-lg shadow-yellow-400/30 -translate-y-2 scale-105' : '',
         card.tapped ? 'rotate-90 opacity-80' : '',
-        onClick ? 'hover:-translate-y-1 hover:shadow-lg hover:shadow-white/10' : '',
-        draggable ? 'hover:shadow-md' : '',
+        onClick && !card.tapped ? 'hover:-translate-y-1 hover:shadow-xl hover:shadow-black/50 hover:brightness-110' : '',
+        dragPayload ? 'hover:shadow-md select-none' : '',
       ]
         .filter(Boolean)
         .join(' ')}
     >
-      {/* Cost badge — oculto en cartas de oro (no tienen coste) */}
-      {!compact && card.tipo !== 'oro' && (
-        <div className="absolute top-1 left-1 w-5 h-5 rounded-full bg-yellow-500 flex items-center justify-center text-[10px] font-bold text-black shadow">
+      {/* Imagen full-bleed (todos los tipos) */}
+      <div className="absolute inset-0 rounded-lg overflow-hidden">
+        {imageError ? (
+          <div className="w-full h-full bg-slate-700 flex items-center justify-center text-slate-500 text-xs">
+            {card.tipo === 'arma' ? '⚔' : card.tipo[0].toUpperCase()}
+          </div>
+        ) : (
+          <img src={card.imagen} alt={card.nombre} className="w-full h-full object-cover" onError={() => setImageError(true)} />
+        )}
+        {/* Gradiente inferior para legibilidad del nombre */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 rounded-lg" />
+      </div>
+
+      {/* Aliado: fuerza arriba-izquierda, coste arriba-derecha */}
+      {!isCompact && card.tipo === 'aliado' && (
+        <>
+          <div className={`absolute top-1 left-1 rounded-full bg-red-700 flex items-center justify-center font-bold text-white shadow ${BADGE_CLASSES[size]}`}>
+            {card.fuerza}
+          </div>
+          <div className={`absolute top-1 right-1 rounded-full bg-yellow-500 flex items-center justify-center font-bold text-black shadow ${BADGE_CLASSES[size]}`}>
+            {card.coste}
+          </div>
+        </>
+      )}
+
+      {/* Cost badge — arriba-derecha para tótem/talismán (arma lo maneja internamente) */}
+      {!isCompact && card.tipo !== 'oro' && card.tipo !== 'aliado' && card.tipo !== 'arma' && (
+        <div className={`absolute top-1 right-1 rounded-full bg-yellow-500 flex items-center justify-center font-bold text-black shadow ${BADGE_CLASSES[size]}`}>
           {card.coste}
         </div>
       )}
 
-      {/* Gold card marker — moneda en lugar del badge de coste */}
-      {!compact && card.tipo === 'oro' && (
-        <div className="absolute top-1 left-1 w-5 h-5 rounded-full bg-yellow-400 flex items-center justify-center text-[10px] shadow border border-yellow-300">
+      {/* Gold card marker — moneda arriba-derecha */}
+      {!isCompact && card.tipo === 'oro' && (
+        <div className={`absolute top-1 right-1 rounded-full bg-yellow-400 flex items-center justify-center shadow border border-yellow-300 ${BADGE_CLASSES[size]}`}>
           ✦
         </div>
       )}
 
-      {/* Seal badge */}
-      {!compact && (
-        <div className="absolute top-1 right-1">
-          <Badge variant={seal.variant} className="text-[8px] px-1">
-            {seal.label}
-          </Badge>
+      {/* Etiqueta tipo arriba-izquierda (solo arma) */}
+      {!isCompact && card.tipo === 'arma' && (
+        <div className="absolute top-1 left-1 flex items-center gap-0.5 bg-black/60 rounded px-1 py-0.5">
+          <span className={`text-red-300 font-bold uppercase tracking-wider leading-none ${size === 'lg' || size === 'xl' ? 'text-[8px]' : 'text-[7px]'}`}>⚔ Arma</span>
         </div>
       )}
 
-      {/* Card image */}
-      <div className={`w-full overflow-hidden ${compact ? 'h-8 rounded-t-md' : 'h-16 rounded-t-md'}`}>
-        {imageError ? (
-          <div className="w-full h-full bg-slate-700 flex items-center justify-center text-slate-500 text-xs">
-            {card.tipo[0].toUpperCase()}
-          </div>
-        ) : (
-          <img
-            src={card.imagen}
-            alt={card.nombre}
-            className="w-full h-full object-cover"
-            onError={() => setImageError(true)}
-          />
-        )}
-      </div>
+      {/* Coste arma arriba-derecha */}
+      {!isCompact && card.tipo === 'arma' && (
+        <div className={`absolute top-1 right-1 rounded-full bg-yellow-500 flex items-center justify-center font-bold text-black shadow ${BADGE_CLASSES[size]}`}>
+          {card.coste}
+        </div>
+      )}
 
-      {/* Card name */}
-      {!compact && (
-        <div className="px-1 pt-1">
-          <p className="text-[9px] font-bold text-white leading-tight line-clamp-2">
+      {/* Nombre abajo en overlay */}
+      {!isCompact && (
+        <div className="absolute bottom-0 left-0 right-0 px-1 pb-1">
+          <p className={`font-bold text-white leading-tight line-clamp-2 drop-shadow-md ${NAME_CLASSES[size]}`}>
             {card.nombre}
           </p>
         </div>
       )}
 
-      {/* Force stat */}
-      {card.fuerza > 0 && (
+      {/* Bono de fuerza arma — badge rojo abajo-derecha */}
+      {!isCompact && card.tipo === 'arma' && (card.bonusFuerza ?? 0) > 0 && (
+        <div className={`absolute font-bold text-white bg-red-700 rounded-full flex items-center justify-center shadow border border-red-500/50 ${FORCE_BADGE_CLASSES[size]}`}>
+          +{card.bonusFuerza}
+        </div>
+      )}
+
+      {/* Force stat — solo para cartas que no son aliado (en aliado va arriba-izquierda) */}
+      {card.tipo !== 'arma' && card.fuerza > 0 && (isCompact || card.tipo !== 'aliado') && (
         <div
           className={[
             'absolute font-bold text-white bg-red-700/80 rounded-full flex items-center justify-center',
-            compact ? 'bottom-0.5 right-0.5 w-4 h-4 text-[8px]' : 'bottom-1 right-1 w-5 h-5 text-[10px]',
+            FORCE_BADGE_CLASSES[size],
           ].join(' ')}
         >
           {card.fuerza}
@@ -152,4 +216,16 @@ export function CardView({
       )}
     </div>
   );
+
+  // Tapped cards rotate 90°: reserve the rotated footprint so they don't
+  // overflow onto neighbours.
+  if (card.tapped) {
+    return (
+      <div className={`flex items-center justify-center aspect-[4/3] flex-shrink-0 ${TAPPED_WRAPPER_CLASSES[size]}`}>
+        {cardEl}
+      </div>
+    );
+  }
+
+  return cardEl;
 }

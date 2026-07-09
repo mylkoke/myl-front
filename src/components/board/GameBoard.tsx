@@ -1,13 +1,28 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Easing } from 'framer-motion';
 import { useGameStore } from '@/store/gameStore';
 import { useGameActions } from '@/hooks/useGameActions';
+import { useOnlineStore } from '@/store/onlineStore';
+import { apiGameSyncService } from '@/services/api/gameSyncService';
 import { PlayerArea } from './PlayerArea';
 import { Separator } from './Separator';
 import { Button } from '@/components/ui/Button';
-import { ChevronRight, SkipForward, RefreshCw, Loader2 } from 'lucide-react';
+import { SettingsPanel } from '@/components/ui/SettingsPanel';
+import { DragGhost } from '@/components/DragGhost';
+import { useSettingsStore, resolveBoardColor } from '@/store/settingsStore';
+import { playDrawCardFx } from '@/utils/drawCardFx';
+import { playDeckDamageFx } from '@/utils/deckDamageFx';
+import { playAllyDestroyedFx } from '@/utils/allyDestroyedFx';
+import { playPhaseBannerFx } from '@/utils/phaseBannerFx';
+import { playAttackPulseFx } from '@/utils/attackPulseFx';
+import {
+  ChevronRight, SkipForward, RefreshCw, Loader2, Settings, Flag, WifiOff, Sparkles,
+} from 'lucide-react';
 import { APP_VERSION } from '@/version';
+import { strengthLockedFor } from '@/utils/gameRules';
+import type { PlayerId } from '@/types/game.types';
 
 const EASE_IN: Easing  = 'easeIn';
 const EASE_OUT: Easing = 'easeOut';
@@ -24,25 +39,138 @@ const PHASE_LABELS: Record<string, string> = {
 export function GameBoard() {
   const players    = useGameStore((s) => s.players);
   const turn       = useGameStore((s) => s.turn);
+  const combat     = useGameStore((s) => s.combat);
   const isGameOver = useGameStore((s) => s.isGameOver);
   const winner     = useGameStore((s) => s.winner);
   const gameLog    = useGameStore((s) => s.gameLog);
-  const { endPlayerTurn, advancePhase, resetGame } = useGameActions();
+  const surrender = useGameStore((s) => s.surrender);
+  const { endPlayerTurn, advancePhase, resetGame, defendWith, regroupGold, regroupAllies,
+    passCombat, playCombatTalisman } = useGameActions();
 
-  const [rotPhase, setRotPhase]     = useState<'idle' | 'out' | 'in'>('idle');
-  const [handoffName, setHandoffName] = useState('');
-  const [isAnimating, setIsAnimating] = useState(false);
+  const [rotPhase, setRotPhase]       = useState<'idle' | 'out' | 'in'>('idle');
+  const [handoffName, setHandoffName]   = useState('');
+  const [isAnimating, setIsAnimating]   = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [confirmSurrender, setConfirmSurrender] = useState(false);
+  const [confirmAbandon, setConfirmAbandon]     = useState(false);
+  const [confirmReset, setConfirmReset]         = useState(false);
+
+  const boardTheme = useSettingsStore((s) => s.boardTheme);
+  const boardColor = resolveBoardColor(boardTheme);
+  const boardImage = boardTheme.mode === 'image' ? boardTheme.imageUrl : null;
+
+  const navigate = useNavigate();
+  const mode          = useOnlineStore((s) => s.mode);
+  const mySeat        = useOnlineStore((s) => s.mySeat);
+  const gameId        = useOnlineStore((s) => s.gameId);
+  const connection    = useOnlineStore((s) => s.connection);
+  const opponentOnline = useOnlineStore((s) => s.opponentOnline);
+  const resetOnline   = useOnlineStore((s) => s.reset);
+  const isOnline = mode === 'online' && mySeat !== null;
+
+  // FX de daño al mazo: se detecta por diff de estado (mazo baja Y cementerio
+  // sube a la vez), así funciona en local y en AMBOS dispositivos online
+  // (el remoto solo recibe el estado hidratado, no eventos).
+  const zoneCountsRef = useRef<Record<PlayerId, { deck: number; grave: number }> | null>(null);
+  useEffect(() => {
+    const prev = zoneCountsRef.current;
+    const next = {
+      player:   { deck: players.player.deck.length,   grave: players.player.graveyard.length },
+      opponent: { deck: players.opponent.deck.length, grave: players.opponent.graveyard.length },
+    };
+    if (prev) {
+      (['player', 'opponent'] as PlayerId[]).forEach((pid) => {
+        const deckDrop = prev[pid].deck - next[pid].deck;
+        const graveRise = next[pid].grave - prev[pid].grave;
+        // deckDrop>0 + graveRise>0 = daño de combate (robar no toca cementerio).
+        const damage = Math.min(deckDrop, graveRise);
+        if (damage > 0) playDeckDamageFx(pid, damage);
+      });
+    }
+    zoneCountsRef.current = next;
+  }, [players]);
+
+  // FX de aliado destruido: un instanceId que estaba en campo (defensa o
+  // ataque) desaparece de ambas líneas → su carta se quiebra y cae al
+  // cementerio. Los rects se capturan en el render ANTERIOR (React ya
+  // desmontó el slot cuando corre este efecto).
+  const fieldIdsRef = useRef<Record<PlayerId, Set<string>> | null>(null);
+  const fieldRectsRef = useRef<Map<string, DOMRect>>(new Map());
+  useEffect(() => {
+    const prev = fieldIdsRef.current;
+    const next: Record<PlayerId, Set<string>> = {
+      player: new Set([...players.player.defenseField, ...players.player.attackField].map((c) => c.instanceId)),
+      opponent: new Set([...players.opponent.defenseField, ...players.opponent.attackField].map((c) => c.instanceId)),
+    };
+    if (prev) {
+      (['player', 'opponent'] as PlayerId[]).forEach((pid) => {
+        prev[pid].forEach((id) => {
+          if (next[pid].has(id)) return;
+          const rect = fieldRectsRef.current.get(id);
+          if (rect) playAllyDestroyedFx(rect, pid);
+        });
+      });
+    }
+    fieldIdsRef.current = next;
+    // Re-captura los rects de las cartas que siguen en campo para el próximo diff.
+    fieldRectsRef.current = new Map(
+      Array.from(document.querySelectorAll<HTMLElement>('[data-fx-instance]')).map((el) => [
+        el.dataset.fxInstance!,
+        el.getBoundingClientRect(),
+      ]),
+    );
+  }, [players]);
+
+  // Banner animado al cambiar de fase (se omite el primer render).
+  const prevPhaseRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (prevPhaseRef.current && prevPhaseRef.current !== turn.phase) {
+      playPhaseBannerFx(turn.phase, PHASE_LABELS[turn.phase] ?? turn.phase);
+    }
+    prevPhaseRef.current = turn.phase;
+  }, [turn.phase]);
+
+  // Pulso de onda roja sobre el aliado que acaba de declarar un ataque.
+  const prevAttackerRef = useRef<string | null>(null);
+  useEffect(() => {
+    const attacker = combat?.attackerInstanceId ?? null;
+    if (attacker && attacker !== prevAttackerRef.current) playAttackPulseFx(attacker);
+    prevAttackerRef.current = attacker;
+  }, [combat?.attackerInstanceId]);
+
+  const leaveOnlineGame = () => {
+    apiGameSyncService.disconnect();
+    resetOnline();
+    navigate('/');
+  };
 
   const handleEndTurn = useCallback(async () => {
     if (isAnimating) return;
+    const currentId = turn.currentPlayer;
+    // La carta que se robará al finalizar (drawCards toma deck[0]): se anticipa
+    // para animar la "mano" tomándola del mazo ANTES de la mutación del estado.
+    const topDeckCard = combat ? undefined : players[currentId].deck[0];
+
+    // Online: each device keeps its own perspective — no board rotation.
+    if (isOnline) {
+      setIsAnimating(true);
+      if (topDeckCard) await playDrawCardFx(currentId, topDeckCard.nombre);
+      endPlayerTurn();
+      setIsAnimating(false);
+      return;
+    }
     const nextName = turn.currentPlayer === 'player'
       ? players.opponent.name
       : players.player.name;
 
     setHandoffName(nextName);
     setIsAnimating(true);
-    setRotPhase('out');
 
+    // 1. Robo animado: la mano toma la carta del Mazo Castillo → mano del jugador.
+    if (topDeckCard) await playDrawCardFx(currentId, topDeckCard.nombre);
+
+    // 2. Rotación 3D de traspaso de turno.
+    setRotPhase('out');
     await new Promise<void>((r) => setTimeout(r, 480));
     endPlayerTurn();
     setRotPhase('in');
@@ -50,7 +178,7 @@ export function GameBoard() {
     await new Promise<void>((r) => setTimeout(r, 480));
     setRotPhase('idle');
     setIsAnimating(false);
-  }, [isAnimating, turn, players, endPlayerTurn]);
+  }, [isOnline, isAnimating, turn, players, combat, endPlayerTurn]);
 
   const boardAnimate =
     rotPhase === 'out'
@@ -59,13 +187,36 @@ export function GameBoard() {
       ? { rotateX: 0,  scaleY: 1,    opacity: 1,  transition: { duration: 0.45, ease: EASE_OUT } }
       : { rotateX: 0,  scaleY: 1,    opacity: 1,  transition: { duration: 0.3,  ease: EASE_OUT } };
 
-  const isPlayerTurn = turn.currentPlayer === 'player' && !isAnimating;
+  // Local: el jugador activo siempre abajo (hot-seat con rotación).
+  // Online: MI lado siempre abajo, gane o no el turno.
+  const bottomId: PlayerId = isOnline ? mySeat! : turn.currentPlayer;
+  const topId: PlayerId    = bottomId === 'player' ? 'opponent' : 'player';
+  const isMyTurnOnline = isOnline && turn.currentPlayer === mySeat;
+  const canAct = !isGameOver && (isOnline ? isMyTurnOnline : !isAnimating);
+
+  const activePlayer = players[isOnline ? mySeat! : turn.currentPlayer];
+  const hasGoldToRegroup  = canAct && turn.phase === 'agrupacion' && (activePlayer?.goldPaid.length ?? 0) > 0 && !activePlayer?.goldSpentThisTurn;
+  const hasAlliesToRegroup = canAct && turn.phase === 'agrupacion' && (activePlayer?.attackField.length ?? 0) > 0;
 
   return (
     <div
-      className="relative w-full h-screen overflow-hidden bg-[#080f18] flex flex-col"
-      style={{ perspective: '1200px' }}
+      className="relative w-full h-screen overflow-hidden flex flex-col"
+      style={{
+        perspective: '1200px',
+        backgroundColor: boardColor,
+        backgroundImage: boardImage ? `url(${boardImage})` : undefined,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }}
     >
+      {/* ── Image overlay for readability ────────────────────────────── */}
+      {boardImage && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{ backgroundColor: `rgba(0,0,0,${boardTheme.overlayOpacity})` }}
+        />
+      )}
+
       {/* ── Ambient glow ─────────────────────────────────────────────── */}
       <div className="absolute inset-0 pointer-events-none"
         style={{ backgroundImage:
@@ -73,22 +224,46 @@ export function GameBoard() {
       />
 
       {/* ── Top bar: fase + controles ─────────────────────────────────── */}
-      <div className="relative z-20 flex items-center justify-between px-4 py-1.5 bg-slate-900/90 border-b border-slate-700/40 flex-shrink-0">
+      <div className="relative z-20 flex items-center justify-between px-2 sm:px-4 py-1.5 bg-slate-900/80 backdrop-blur-sm border-b border-slate-700/40 flex-shrink-0 gap-2">
         {/* Left: turn info */}
-        <div className="flex items-center gap-3 text-sm">
-          <span className="text-slate-500 text-xs">Turno {turn.turnNumber}</span>
-          <span className="text-white font-semibold">{players[turn.currentPlayer].name}</span>
+        <div className="flex items-center gap-2 text-sm flex-shrink-0">
+          <span className="text-slate-500 text-xs hidden sm:inline">Turno {turn.turnNumber}</span>
+          <span className="text-white font-semibold text-xs sm:text-sm">{players[turn.currentPlayer].name}</span>
+          {/* Fase actual — versión compacta para móvil (el indicador completo es md+) */}
+          <span className="md:hidden text-[9px] font-bold px-1.5 py-0.5 rounded border bg-yellow-500/15 text-yellow-300 border-yellow-500/40 whitespace-nowrap">
+            {PHASE_LABELS[turn.phase] ?? turn.phase}
+          </span>
+          {isOnline && (
+            <span
+              className={[
+                'text-[9px] uppercase tracking-wider rounded-full px-1.5 py-0.5 border',
+                isMyTurnOnline
+                  ? 'text-green-400 border-green-500/40 bg-green-500/10'
+                  : 'text-slate-400 border-slate-600/50',
+              ].join(' ')}
+            >
+              {isMyTurnOnline ? 'Tu turno' : 'Turno rival'}
+            </span>
+          )}
+          {isOnline && connection !== 'connected' && (
+            <span className="flex items-center gap-1 text-[9px] text-orange-400">
+              <WifiOff size={10} /> reconectando…
+            </span>
+          )}
+          {isOnline && connection === 'connected' && !opponentOnline && (
+            <span className="text-[9px] text-orange-400 hidden sm:inline">rival desconectado</span>
+          )}
         </div>
 
-        {/* Center: phase indicator */}
-        <div className="flex items-center gap-1.5">
+        {/* Center: phase indicator — oculto en pantallas pequeñas */}
+        <div className="hidden md:flex items-center gap-1.5">
           {PHASE_SEQUENCE.map((phase) => (
             <div
               key={phase}
               className={[
                 'text-[10px] px-2 py-0.5 rounded font-medium transition-all',
                 turn.phase === phase
-                  ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
+                  ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 shadow-[0_0_8px_rgba(251,191,36,0.25)]'
                   : 'text-slate-600',
               ].join(' ')}
             >
@@ -98,35 +273,125 @@ export function GameBoard() {
         </div>
 
         {/* Right: action buttons */}
-        <div className="flex items-center gap-2">
-          {!isGameOver && isPlayerTurn && (
+        <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+          {hasGoldToRegroup && (
+            <Button variant="secondary" size="sm"
+              onClick={() => regroupGold(isOnline ? mySeat! : turn.currentPlayer)}
+              className="flex items-center gap-1 text-xs border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/10"
+              title={`Reagrupar ${activePlayer.goldPaid.length} oro(s) pagado(s)`}
+            >
+              <RefreshCw size={12} />
+              <span className="hidden sm:inline">Reagrupar Oro</span>
+              <span className="text-[9px] bg-yellow-500/20 rounded px-1">{activePlayer.goldPaid.length}</span>
+            </Button>
+          )}
+          {hasAlliesToRegroup && (
+            <Button variant="secondary" size="sm"
+              onClick={() => regroupAllies(isOnline ? mySeat! : turn.currentPlayer)}
+              className="flex items-center gap-1 text-xs border-blue-500/50 text-blue-400 hover:bg-blue-500/10"
+              title={`Reagrupar ${activePlayer.attackField.length} aliado(s) de la línea de ataque`}
+            >
+              <RefreshCw size={12} />
+              <span className="hidden sm:inline">Reagrupar Aliados</span>
+              <span className="text-[9px] bg-blue-500/20 rounded px-1">{activePlayer.attackField.length}</span>
+            </Button>
+          )}
+          {canAct && (
             <>
-              <Button variant="secondary" size="sm" onClick={advancePhase} disabled={isAnimating}
+              <Button variant="secondary" size="sm" onClick={advancePhase}
                 className="flex items-center gap-1 text-xs">
-                <ChevronRight size={12} /> Fase
+                <ChevronRight size={12} />
+                <span className="hidden sm:inline">Fase</span>
               </Button>
-              <Button variant="primary" size="sm" onClick={handleEndTurn} disabled={isAnimating}
+              <Button variant="primary" size="sm" onClick={handleEndTurn}
                 className="flex items-center gap-1 text-xs">
-                {isAnimating ? <Loader2 size={12} className="animate-spin" /> : <SkipForward size={12} />}
-                Finalizar turno
+                <SkipForward size={12} />
+                <span className="hidden sm:inline">Finalizar turno</span>
               </Button>
             </>
           )}
-          {!isGameOver && !isPlayerTurn && !isAnimating && (
-            <span className="text-slate-600 text-xs italic">Turno del oponente…</span>
-          )}
           {isAnimating && (
             <span className="text-slate-500 text-xs flex items-center gap-1">
-              <Loader2 size={10} className="animate-spin" /> Girando…
+              <Loader2 size={10} className="animate-spin" />
+              <span className="hidden sm:inline">Girando…</span>
             </span>
           )}
-          {isGameOver && (
+          {isGameOver && !isOnline && (
             <Button variant="primary" size="sm" onClick={resetGame} className="flex items-center gap-1 text-xs">
-              <RefreshCw size={12} /> Nueva partida
+              <RefreshCw size={12} />
+              <span className="hidden sm:inline">Nueva partida</span>
             </Button>
           )}
-          {/* Version badge — top right corner */}
-          <span className="text-[9px] text-slate-600 font-mono select-none ml-2">
+          {/* Rendirse — local: visible siempre que la partida esté activa */}
+          {!isOnline && !isGameOver && (
+            confirmSurrender ? (
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-slate-400 hidden sm:inline">¿Rendirse?</span>
+                <Button variant="danger" size="sm"
+                  onClick={() => { surrender(bottomId); setConfirmSurrender(false); }}
+                  className="text-xs px-2">Sí</Button>
+                <Button variant="secondary" size="sm"
+                  onClick={() => setConfirmSurrender(false)}
+                  className="text-xs px-2">No</Button>
+              </div>
+            ) : (
+              <Button variant="danger" size="sm"
+                onClick={() => setConfirmSurrender(true)}
+                className="flex items-center gap-1 text-xs">
+                <Flag size={12} />
+                <span className="hidden sm:inline">Rendirse</span>
+              </Button>
+            )
+          )}
+          {/* Abandonar — online (desktop; en móvil vive en el menú del engranaje) */}
+          {isOnline && !isGameOver && (
+            confirmAbandon ? (
+              <div className="hidden sm:flex items-center gap-1">
+                <span className="text-[10px] text-slate-400 hidden sm:inline">¿Abandonar?</span>
+                <Button variant="danger" size="sm"
+                  onClick={() => { if (gameId) apiGameSyncService.abandon(gameId); setConfirmAbandon(false); }}
+                  className="text-xs px-2">Sí</Button>
+                <Button variant="secondary" size="sm"
+                  onClick={() => setConfirmAbandon(false)}
+                  className="text-xs px-2">No</Button>
+              </div>
+            ) : (
+              <Button variant="danger" size="sm"
+                onClick={() => setConfirmAbandon(true)}
+                className="hidden sm:flex items-center gap-1 text-xs">
+                <Flag size={12} />
+                <span className="hidden sm:inline">Abandonar</span>
+              </Button>
+            )
+          )}
+          {/* Reiniciar partida (desktop; en móvil vive en el menú del engranaje) */}
+          {confirmReset ? (
+            <div className="hidden sm:flex items-center gap-1">
+              <span className="text-[10px] text-slate-400 hidden sm:inline">¿Reiniciar?</span>
+              <Button variant="danger" size="sm"
+                onClick={() => { resetGame(); setConfirmReset(false); }}
+                className="text-xs px-2">Sí</Button>
+              <Button variant="secondary" size="sm"
+                onClick={() => setConfirmReset(false)}
+                className="text-xs px-2">No</Button>
+            </div>
+          ) : (
+            <Button variant="secondary" size="sm"
+              onClick={() => setConfirmReset(true)}
+              className="hidden sm:flex items-center gap-1 text-xs text-slate-400 hover:text-white"
+              title="Reiniciar partida">
+              <RefreshCw size={12} />
+              <span className="hidden sm:inline">Reiniciar</span>
+            </Button>
+          )}
+          <button
+            onClick={() => setSettingsOpen(true)}
+            title="Personalizar campo"
+            className="text-slate-500 hover:text-yellow-400 transition-colors p-1"
+          >
+            <Settings size={14} />
+          </button>
+          <span className="text-[9px] text-slate-600 font-mono select-none hidden sm:inline ml-1">
             v{APP_VERSION}
           </span>
         </div>
@@ -138,27 +403,236 @@ export function GameBoard() {
         animate={boardAnimate}
         style={{ transformOrigin: 'center center', transformStyle: 'preserve-3d' }}
       >
-        {/* Opponent (top) */}
-        <div className="flex-1 p-2 opacity-85">
+        {/* Rival / jugador en espera (arriba) — cartas boca abajo */}
+        <div className="flex-1 p-2 opacity-60 saturate-75 transition-all duration-300">
           <PlayerArea
-            player={players.opponent}
-            playerId="opponent"
+            player={players[topId]}
+            playerId={topId}
             isOpponent
-            currentPhase={turn.currentPlayer === 'opponent' ? turn.phase : undefined}
+            currentPhase={undefined}
           />
         </div>
 
         <Separator />
 
-        {/* Player (bottom) */}
-        <div className="flex-1 p-2">
+        {/* Mi lado (abajo) */}
+        <div
+          className={[
+            'flex-1 p-2 rounded-xl transition-all duration-300',
+            canAct ? 'ring-1 ring-yellow-500/10' : '',
+          ].join(' ')}
+        >
           <PlayerArea
-            player={players.player}
-            playerId="player"
-            currentPhase={turn.currentPlayer === 'player' ? turn.phase : undefined}
+            player={players[bottomId]}
+            playerId={bottomId}
+            currentPhase={turn.phase}
           />
         </div>
       </motion.div>
+
+      {/* ── Defense panel: shown while a combat awaits the defender ────── */}
+      <AnimatePresence>
+        {combat && !isGameOver && (() => {
+          const defenderId: PlayerId = combat.attackerId === 'player' ? 'opponent' : 'player';
+          const attackerPlayer = players[combat.attackerId];
+          const defenderPlayer = players[defenderId];
+          const attacker = attackerPlayer.attackField.find(
+            (c) => c.instanceId === combat.attackerInstanceId
+          );
+          if (!attacker) return null;
+          // 'fuerza_inmutable' rival en juego: fuerza impresa, sin bonos
+          const atkForce = strengthLockedFor(combat.attackerId, players)
+            ? attacker.fuerza
+            : attacker.fuerza +
+              (attackerPlayer.equippedWeapons[attacker.instanceId]?.bonusFuerza ?? 0) +
+              (attackerPlayer.weaponTempBonuses[attacker.instanceId] ?? 0);
+
+          // ── Sub-fase: Guerra de Talismanes ──────────────────────────────
+          if (combat.status === 'talisman_war') {
+            const activeId = combat.activePlayer;
+            const activePlayer = players[activeId];
+            const talismanes = activePlayer.hand.filter((c) => c.tipo === 'talisman');
+
+            // Online: solo el jugador activo ve el panel; el otro espera.
+            if (isOnline && activeId !== mySeat) {
+              return (
+                <motion.div
+                  key="war-wait"
+                  className="absolute bottom-12 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 border border-purple-500/40 rounded-full px-4 py-2 flex items-center gap-2 shadow-xl"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                >
+                  <Loader2 size={13} className="animate-spin text-purple-400" />
+                  <span className="text-xs text-slate-300">
+                    Guerra de Talismanes: turno de {activePlayer.name}…
+                  </span>
+                </motion.div>
+              );
+            }
+
+            return (
+              <motion.div
+                key="talisman-war"
+                className="absolute inset-0 z-40 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-3"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <motion.div
+                  initial={{ y: 40, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  className="w-full max-w-md bg-slate-900 border border-purple-500/40 rounded-2xl p-4 sm:p-6 shadow-2xl"
+                >
+                  <div className="text-center mb-4">
+                    <div className="text-purple-300 text-xs uppercase tracking-widest font-bold flex items-center justify-center gap-1.5">
+                      <Sparkles size={13} /> Guerra de Talismanes
+                    </div>
+                    <div className="text-white text-lg font-black mt-1">
+                      Turno de {activePlayer.name}
+                    </div>
+                    <p className="text-slate-400 text-xs mt-1">
+                      Juega un talismán o pasa. La sub-fase termina cuando ambos pasan seguidos.
+                    </p>
+                  </div>
+
+                  {talismanes.length > 0 ? (
+                    <div className="flex flex-wrap justify-center gap-2 mb-4 max-h-48 overflow-y-auto">
+                      {talismanes.map((tal) => {
+                        const affordable = tal.coste <= activePlayer.goldCount;
+                        return (
+                          <button
+                            key={tal.instanceId}
+                            disabled={!affordable}
+                            onClick={() => playCombatTalisman(tal, activeId)}
+                            className={[
+                              'flex flex-col items-center gap-1 p-2 rounded-lg border transition-all min-w-[72px]',
+                              affordable
+                                ? 'border-slate-700 bg-slate-800/60 hover:border-purple-400 hover:bg-purple-500/10 active:scale-95'
+                                : 'border-slate-800 bg-slate-900/60 opacity-40 cursor-not-allowed',
+                            ].join(' ')}
+                          >
+                            <span className="text-xs text-white font-bold text-center leading-tight line-clamp-2 max-w-[80px]">
+                              {tal.nombre}
+                            </span>
+                            <span className="text-[10px] text-yellow-400 font-black">
+                              {tal.coste} ◉
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-center text-slate-500 text-xs mb-4">
+                      {activePlayer.name} no tiene talismanes en la mano.
+                    </p>
+                  )}
+
+                  <Button
+                    variant="secondary"
+                    fullWidth
+                    onClick={() => passCombat(activeId)}
+                    className="text-sm"
+                  >
+                    Pasar{combat.consecutivePasses === 1 ? ' (ambos pasan → asignar daño)' : ''}
+                  </Button>
+                </motion.div>
+              </motion.div>
+            );
+          }
+
+          // Online: el panel de defensa solo aparece en el dispositivo del
+          // defensor; el atacante ve un aviso de espera.
+          if (isOnline && defenderId !== mySeat) {
+            return (
+              <motion.div
+                key="defense-wait"
+                className="absolute bottom-12 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 border border-red-500/40 rounded-full px-4 py-2 flex items-center gap-2 shadow-xl"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+              >
+                <Loader2 size={13} className="animate-spin text-red-400" />
+                <span className="text-xs text-slate-300">
+                  {defenderPlayer.name} decide si defiende…
+                </span>
+              </motion.div>
+            );
+          }
+
+          return (
+            <motion.div
+              key="defense"
+              className="absolute inset-0 z-40 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-3"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <motion.div
+                initial={{ y: 40, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                className="w-full max-w-md bg-slate-900 border border-red-500/40 rounded-2xl p-4 sm:p-6 shadow-2xl"
+              >
+                <div className="text-center mb-4">
+                  <div className="text-red-400 text-xs uppercase tracking-widest font-bold">
+                    ¡{defenderPlayer.name}, te atacan!
+                  </div>
+                  <div className="text-white text-lg font-black mt-1">
+                    {attacker.nombre} — {atkForce} ⚔
+                  </div>
+                  <p className="text-slate-400 text-xs mt-1">
+                    Elige un aliado para defender o recibe {atkForce} carta(s) de daño en tu
+                    Mazo Castillo.
+                  </p>
+                </div>
+
+                {defenderPlayer.defenseField.length > 0 && (
+                  <div className="flex flex-wrap justify-center gap-2 mb-4 max-h-48 overflow-y-auto">
+                    {defenderPlayer.defenseField.map((ally) => {
+                      const force =
+                        ally.fuerza +
+                        (defenderPlayer.equippedWeapons[ally.instanceId]?.bonusFuerza ?? 0) +
+                        (defenderPlayer.weaponTempBonuses[ally.instanceId] ?? 0);
+                      return (
+                        <button
+                          key={ally.instanceId}
+                          onClick={() => defendWith(ally.instanceId, defenderId)}
+                          className="flex flex-col items-center gap-1 p-2 rounded-lg border border-slate-700 bg-slate-800/60 hover:border-blue-400 hover:bg-blue-500/10 active:scale-95 transition-all min-w-[72px]"
+                        >
+                          <span className="text-xs text-white font-bold text-center leading-tight line-clamp-2 max-w-[80px]">
+                            {ally.nombre}
+                          </span>
+                          <span
+                            className={[
+                              'text-sm font-black',
+                              force > atkForce
+                                ? 'text-green-400'
+                                : force === atkForce
+                                ? 'text-yellow-400'
+                                : 'text-red-400',
+                            ].join(' ')}
+                          >
+                            {force} ⚔
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <Button
+                  variant="danger"
+                  fullWidth
+                  onClick={() => defendWith(null, defenderId)}
+                  className="text-sm"
+                >
+                  No defender (−{Math.min(atkForce, defenderPlayer.deck.length)} cartas del mazo)
+                </Button>
+              </motion.div>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
 
       {/* ── Turn handoff overlay ──────────────────────────────────────── */}
       <AnimatePresence>
@@ -182,14 +656,15 @@ export function GameBoard() {
 
       {/* ── Game log strip (bottom) ───────────────────────────────────── */}
       <div className="relative z-10 flex-shrink-0 bg-slate-950/80 border-t border-slate-800/50 px-3 py-1 flex gap-2 overflow-x-auto scrollbar-thin">
-        {gameLog.slice(0, 5).map((entry) => (
+        {gameLog.slice(0, 5).map((entry, idx) => (
           <span
             key={entry.id}
             className={[
               'text-[10px] whitespace-nowrap',
+              idx > 0 ? 'opacity-50' : '',
               entry.type === 'error'  ? 'text-red-400' :
               entry.type === 'system' ? 'text-blue-400' :
-              entry.type === 'combat' ? 'text-orange-400' : 'text-slate-500',
+              entry.type === 'combat' ? 'text-orange-400' : 'text-slate-400',
             ].join(' ')}
           >
             {entry.message}
@@ -206,24 +681,57 @@ export function GameBoard() {
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           >
             <div className="text-center">
-              <motion.div
-                className="text-5xl font-black text-yellow-400 drop-shadow-2xl"
-                initial={{ scale: 0.4, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ delay: 0.15, type: 'spring' }}
-              >
-                {winner === 'player' ? '¡VICTORIA!' : 'DERROTA'}
-              </motion.div>
-              <p className="text-slate-400 mt-3 text-sm">
-                {winner === 'player' ? 'Has vencido al oponente' : 'El oponente ha ganado'}
-              </p>
-              <Button variant="primary" size="lg" onClick={resetGame} className="mt-6">
-                <RefreshCw size={16} className="inline mr-2" /> Nueva partida
-              </Button>
+              {(() => {
+                const iWon = isOnline ? winner === mySeat : winner === 'player';
+                return (
+                  <>
+                    <motion.div
+                      className="text-5xl font-black text-yellow-400 drop-shadow-2xl"
+                      initial={{ scale: 0.4, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ delay: 0.15, type: 'spring' }}
+                    >
+                      {iWon ? '¡VICTORIA!' : 'DERROTA'}
+                    </motion.div>
+                    <p className="text-slate-400 mt-3 text-sm">
+                      {iWon ? 'Has vencido al oponente' : 'El oponente ha ganado'}
+                    </p>
+                    {isOnline ? (
+                      <Button variant="primary" size="lg" onClick={leaveOnlineGame} className="mt-6">
+                        Volver al lobby
+                      </Button>
+                    ) : (
+                      <div className="flex flex-col sm:flex-row gap-3 mt-6 justify-center">
+                        <Button variant="secondary" size="lg" onClick={() => navigate('/')}>
+                          Menú principal
+                        </Button>
+                        <Button variant="primary" size="lg" onClick={resetGame}>
+                          <RefreshCw size={16} className="inline mr-2" /> Nueva partida
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── Settings panel ────────────────────────────────────────────── */}
+      <SettingsPanel
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onResetGame={resetGame}
+        onAbandonGame={
+          isOnline && !isGameOver && gameId
+            ? () => apiGameSyncService.abandon(gameId)
+            : undefined
+        }
+      />
+
+      {/* ── Drag ghost (pointer drag & drop, mouse + touch) ───────────── */}
+      <DragGhost />
     </div>
   );
 }

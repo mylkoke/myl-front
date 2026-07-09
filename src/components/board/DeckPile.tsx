@@ -1,7 +1,5 @@
 import type { Card } from '@/types/card.types';
 import type { PlayerId } from '@/types/game.types';
-import { useGameActions } from '@/hooks/useGameActions';
-import { useTurn } from '@/hooks/usePlayer';
 import { Layers } from 'lucide-react';
 
 interface DeckPileProps {
@@ -10,45 +8,25 @@ interface DeckPileProps {
   isOpponent?: boolean;
 }
 
-export function DeckPile({ deck, playerId, isOpponent = false }: DeckPileProps) {
-  const { drawForPlayer } = useGameActions();
-  const turn = useTurn();
-
-  const isMyTurn = turn.currentPlayer === playerId;
-  const canDraw = isMyTurn && !isOpponent;
+export function DeckPile({ deck, playerId }: DeckPileProps) {
   const count = deck.length;
-
-  // Visual stack layers (up to 5 offset cards)
   const stackLayers = Math.min(count, 5);
 
-  const handleClick = () => {
-    if (!canDraw) return;
-    drawForPlayer(playerId);
-  };
-
   return (
-    <div className="flex flex-col items-center gap-1 select-none">
+    <div className="flex flex-col items-center gap-1 select-none" data-fx={`deck-${playerId}`}>
       {/* Label */}
-      <span className="text-[9px] text-slate-500 uppercase tracking-widest">
+      <span className="text-[9px] text-slate-500 uppercase tracking-widest hidden sm:inline">
         Mazo Castillo
       </span>
 
       {/* Deck pile visual */}
       <div
-        className={[
-          'relative',
-          canDraw ? 'cursor-pointer group' : 'cursor-default',
-        ].join(' ')}
-        style={{ width: 52, height: 72 }}
-        onClick={handleClick}
-        title={canDraw ? 'Robar carta del Mazo Castillo' : `${count} cartas`}
+        className="relative cursor-default w-16 h-[85px] sm:w-20 sm:h-[107px] lg:w-24 lg:h-32"
+        title={`${count} cartas`}
       >
         {count === 0 ? (
-          <div
-            className="absolute inset-0 rounded-lg border-2 border-dashed border-slate-700
-                        flex items-center justify-center text-slate-700"
-          >
-            <Layers size={18} />
+          <div className="absolute inset-0 rounded-lg border-2 border-dashed border-slate-700 flex items-center justify-center text-slate-700">
+            <Layers size={16} />
           </div>
         ) : (
           <>
@@ -58,8 +36,7 @@ export function DeckPile({ deck, playerId, isOpponent = false }: DeckPileProps) 
                 key={i}
                 className="absolute rounded-lg border border-slate-600 bg-slate-800"
                 style={{
-                  width: 48,
-                  height: 68,
+                  inset: 0,
                   top: (stackLayers - 1 - i) * 2,
                   left: (stackLayers - 1 - i) * 1,
                   zIndex: i,
@@ -69,20 +46,8 @@ export function DeckPile({ deck, playerId, isOpponent = false }: DeckPileProps) 
 
             {/* Top card (face down) */}
             <div
-              className={[
-                'absolute rounded-lg border-2 bg-gradient-to-br',
-                'from-slate-700 to-slate-900',
-                isMyTurn && canDraw
-                  ? 'border-yellow-500/60 group-hover:border-yellow-400 group-hover:shadow-lg group-hover:shadow-yellow-500/20 transition-all'
-                  : 'border-slate-600/60',
-              ].join(' ')}
-              style={{
-                width: 48,
-                height: 68,
-                top: 0,
-                left: stackLayers - 1,
-                zIndex: stackLayers,
-              }}
+              className="absolute inset-0 rounded-lg border-2 bg-gradient-to-br from-slate-700 to-slate-900 border-slate-600/60"
+              style={{ zIndex: stackLayers }}
             >
               {/* MYL card back pattern */}
               <div className="absolute inset-0 rounded-lg overflow-hidden">
@@ -95,13 +60,8 @@ export function DeckPile({ deck, playerId, isOpponent = false }: DeckPileProps) 
                 />
               </div>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-yellow-500/40 font-black text-lg">M</span>
+                <span className="text-yellow-500/40 font-black text-xl lg:text-2xl">M</span>
               </div>
-
-              {/* Hover glow on drawable */}
-              {canDraw && (
-                <div className="absolute inset-0 rounded-lg bg-yellow-500/0 group-hover:bg-yellow-500/10 transition-colors" />
-              )}
             </div>
           </>
         )}
