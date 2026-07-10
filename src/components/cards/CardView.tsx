@@ -140,15 +140,18 @@ export function CardView({
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 rounded-lg" />
       </div>
 
-      {/* Aliado: fuerza arriba-izquierda, coste arriba-derecha */}
-      {!isCompact && card.tipo === 'aliado' && (
+      {/* Aliado: fuerza SIEMPRE arriba-izquierda (como el diseño real de la
+          carta); coste arriba-derecha solo en tamaños no compactos */}
+      {card.tipo === 'aliado' && (
         <>
-          <div className={`absolute top-1 left-1 rounded-full bg-red-700 flex items-center justify-center font-bold text-white shadow ${BADGE_CLASSES[size]}`}>
+          <div className={`absolute top-0.5 left-0.5 md:top-1 md:left-1 z-10 rounded-full bg-red-700 flex items-center justify-center font-bold text-white shadow ${BADGE_CLASSES[size]}`}>
             {card.fuerza}
           </div>
-          <div className={`absolute top-1 right-1 rounded-full bg-yellow-500 flex items-center justify-center font-bold text-black shadow ${BADGE_CLASSES[size]}`}>
-            {card.coste}
-          </div>
+          {!isCompact && (
+            <div className={`absolute top-1 right-1 rounded-full bg-yellow-500 flex items-center justify-center font-bold text-black shadow ${BADGE_CLASSES[size]}`}>
+              {card.coste}
+            </div>
+          )}
         </>
       )}
 
@@ -196,8 +199,9 @@ export function CardView({
         </div>
       )}
 
-      {/* Force stat — solo para cartas que no son aliado (en aliado va arriba-izquierda) */}
-      {card.tipo !== 'arma' && card.fuerza > 0 && (isCompact || card.tipo !== 'aliado') && (
+      {/* Force stat abajo-derecha — solo cartas que NO son aliado ni arma
+          (los aliados llevan la fuerza arriba-izquierda en todos los tamaños) */}
+      {card.tipo !== 'arma' && card.tipo !== 'aliado' && card.fuerza > 0 && (
         <div
           className={[
             'absolute font-bold text-white bg-red-700/80 rounded-full flex items-center justify-center',
