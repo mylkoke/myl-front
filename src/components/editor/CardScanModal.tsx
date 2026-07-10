@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Crop, Loader2, SkipForward, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { detectCard, extractCard } from '@/utils/cardScanner';
-import type { DetectedCard } from '@/utils/cardScanner';
+import type { Point } from '@/utils/cardScanner';
 
 const PREVIEW_MAX = 420; // px, lado mayor de la vista previa
+const HANDLE_RADIUS = 9; // px en canvas: tamaño del nodo de esquina
+const HIT_RADIUS = 22; // px: distancia máxima para "agarrar" un nodo
 
 interface CardScanModalProps {
   /** Cola de fotos a procesar (1 en modo formulario, N en modo lote). */
@@ -18,67 +20,71 @@ interface CardScanModalProps {
 }
 
 /**
- * Vista previa estilo CamScanner: muestra la foto con el marco verde del
- * recorte detectado y deja decidir por botón — recortar, usar la original
- * o (en lote) omitir la foto.
+ * Vista previa estilo CamScanner: la foto se muestra con el marco del recorte
+ * detectado y sus 4 esquinas son NODOS ARRASTRABLES (mouse y táctil) para
+ * ajustar el recorte a mano cuando la detección no calza. Si no se detecta
+ * la carta, se ofrece un marco inicial ajustable.
  */
 export function CardScanModal({ files, onResult, onClose }: CardScanModalProps) {
   const [index, setIndex] = useState(0);
-  const [detection, setDetection] = useState<DetectedCard | null>(null);
+  const [corners, setCorners] = useState<Point[] | null>(null); // coords de imagen
+  const [autoDetected, setAutoDetected] = useState(true);
   const [detecting, setDetecting] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const bitmapRef = useRef<ImageBitmap | null>(null);
+  const scaleRef = useRef(1); // canvas px / imagen px
+  const dragIndexRef = useRef<number | null>(null);
 
   const file = files[index] as File | undefined;
   const isBatch = files.length > 1;
 
-  // Detecta el contorno y pinta foto + marco en el canvas.
+  // Carga la foto, la pinta y detecta el marco inicial.
   useEffect(() => {
     if (!file) return;
     let cancelled = false;
 
     (async () => {
       const bitmap = await createImageBitmap(file);
+      if (cancelled) {
+        bitmap.close();
+        return;
+      }
+      bitmapRef.current?.close();
+      bitmapRef.current = bitmap;
       const scale = Math.min(1, PREVIEW_MAX / Math.max(bitmap.width, bitmap.height));
+      scaleRef.current = scale;
       const canvas = canvasRef.current;
-      if (!canvas || cancelled) return;
+      if (!canvas) return;
       canvas.width = Math.round(bitmap.width * scale);
       canvas.height = Math.round(bitmap.height * scale);
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      bitmap.close();
+      canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
 
-      let det: DetectedCard | null = null;
+      let detected: Point[] | null = null;
       try {
-        det = await detectCard(file);
+        detected = (await detectCard(file))?.corners ?? null;
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : 'No se pudo cargar el escáner');
         }
       }
       if (cancelled) return;
-      setDetection(det);
+      // Sin detección → marco inicial con margen del 6 % para ajustar a mano.
+      const w = bitmap.width;
+      const h = bitmap.height;
+      const inset = Math.round(Math.min(w, h) * 0.06);
+      setCorners(
+        detected ?? [
+          { x: inset, y: inset },
+          { x: w - inset, y: inset },
+          { x: w - inset, y: h - inset },
+          { x: inset, y: h - inset },
+        ],
+      );
+      setAutoDetected(!!detected);
       setDetecting(false);
-
-      // Marco de referencia del recorte (verde, esquinas marcadas)
-      if (det) {
-        const pts = det.corners.map((p) => ({ x: p.x * scale, y: p.y * scale }));
-        ctx.strokeStyle = '#4ade80';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.moveTo(pts[0].x, pts[0].y);
-        for (const p of pts.slice(1)) ctx.lineTo(p.x, p.y);
-        ctx.closePath();
-        ctx.stroke();
-        ctx.fillStyle = '#4ade80';
-        for (const p of pts) {
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
     })().catch(() => {
       if (!cancelled) {
         setError('No se pudo leer la imagen');
@@ -91,12 +97,102 @@ export function CardScanModal({ files, onResult, onClose }: CardScanModalProps) 
     };
   }, [file]);
 
+  // Repinta foto + marco + nodos cada vez que las esquinas cambian.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const bitmap = bitmapRef.current;
+    if (!canvas || !bitmap || !corners) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const pts = corners.map((p) => ({ x: p.x * scaleRef.current, y: p.y * scaleRef.current }));
+
+    // Sombra fuera del marco para ver claramente qué queda dentro
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath();
+    ctx.rect(0, 0, canvas.width, canvas.height);
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (const p of [...pts.slice(1)].reverse()) ctx.lineTo(p.x, p.y);
+    ctx.closePath();
+    ctx.fill('evenodd');
+    ctx.restore();
+
+    ctx.strokeStyle = '#4ade80';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (const p of pts.slice(1)) ctx.lineTo(p.x, p.y);
+    ctx.closePath();
+    ctx.stroke();
+
+    // Nodos arrastrables
+    for (const p of pts) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, HANDLE_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = '#4ade80';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+    }
+  }, [corners]);
+
+  // ── Arrastre de nodos (Pointer Events: mouse + táctil) ──────────────────
+  const canvasPoint = (e: React.PointerEvent): Point => {
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: ((e.clientX - rect.left) * canvas.width) / rect.width,
+      y: ((e.clientY - rect.top) * canvas.height) / rect.height,
+    };
+  };
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (!corners) return;
+    const p = canvasPoint(e);
+    const scale = scaleRef.current;
+    let closest = -1;
+    let best = HIT_RADIUS;
+    corners.forEach((c, i) => {
+      const d = Math.hypot(c.x * scale - p.x, c.y * scale - p.y);
+      if (d < best) {
+        best = d;
+        closest = i;
+      }
+    });
+    if (closest >= 0) {
+      dragIndexRef.current = closest;
+      canvasRef.current?.setPointerCapture(e.pointerId);
+    }
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    const i = dragIndexRef.current;
+    if (i === null || !corners) return;
+    const bitmap = bitmapRef.current;
+    if (!bitmap) return;
+    const p = canvasPoint(e);
+    const scale = scaleRef.current;
+    const next = [...corners];
+    next[i] = {
+      x: Math.min(bitmap.width, Math.max(0, p.x / scale)),
+      y: Math.min(bitmap.height, Math.max(0, p.y / scale)),
+    };
+    setCorners(next);
+  };
+
+  const onPointerUp = () => {
+    dragIndexRef.current = null;
+  };
+
   const advance = useCallback(() => {
     if (index + 1 < files.length) {
-      // Reset del estado de detección para la siguiente foto de la cola.
       setIndex(index + 1);
+      setCorners(null);
+      setAutoDetected(true);
       setDetecting(true);
-      setDetection(null);
       setError(null);
     } else {
       onClose();
@@ -109,8 +205,7 @@ export function CardScanModal({ files, onResult, onClose }: CardScanModalProps) 
       setProcessing(true);
       setError(null);
       try {
-        const blob =
-          mode === 'crop' && detection ? await extractCard(file, detection.corners) : file;
+        const blob = mode === 'crop' && corners ? await extractCard(file, corners) : file;
         await onResult(blob, file);
         advance();
       } catch (e) {
@@ -119,7 +214,7 @@ export function CardScanModal({ files, onResult, onClose }: CardScanModalProps) 
         setProcessing(false);
       }
     },
-    [file, detection, onResult, advance],
+    [file, corners, onResult, advance],
   );
 
   if (!file) return null;
@@ -142,17 +237,26 @@ export function CardScanModal({ files, onResult, onClose }: CardScanModalProps) 
         <p className="text-xs text-slate-400 truncate">{file.name}</p>
 
         <div className="flex items-center justify-center bg-slate-950 rounded-lg overflow-hidden min-h-[200px]">
-          <canvas ref={canvasRef} className="max-w-full h-auto" />
+          <canvas
+            ref={canvasRef}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            className="max-w-full h-auto cursor-crosshair"
+            style={{ touchAction: 'none' }}
+          />
         </div>
 
-        {detecting && (
+        {detecting ? (
           <p className="text-xs text-slate-400 flex items-center gap-1.5">
             <Loader2 size={12} className="animate-spin" /> Detectando el borde de la carta…
           </p>
-        )}
-        {!detecting && !detection && !error && (
-          <p className="text-xs text-orange-300">
-            No se detectó el borde de la carta; puedes subirla tal cual.
+        ) : (
+          <p className="text-xs text-slate-400">
+            {autoDetected
+              ? 'Arrastra los nodos verdes si el marco no calza con la carta.'
+              : 'No se detectó el borde automáticamente: ajusta los nodos verdes a las esquinas de la carta.'}
           </p>
         )}
         {error && <p className="text-xs text-red-400">{error}</p>}
@@ -161,7 +265,7 @@ export function CardScanModal({ files, onResult, onClose }: CardScanModalProps) 
           <Button
             variant="primary"
             fullWidth
-            disabled={detecting || processing || !detection}
+            disabled={detecting || processing || !corners}
             onClick={() => submit('crop')}
             className="flex items-center justify-center gap-1.5"
           >

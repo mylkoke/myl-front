@@ -284,13 +284,14 @@ export async function extractCard(file: Blob, corners: Point[]): Promise<Blob> {
   const src = cv.imread(srcCanvas);
   let warped: CvMat | null = null;
   try {
-    const [tl, tr, br, bl] = corners;
+    // Las esquinas pueden venir ajustadas a mano: se reordenan por seguridad.
+    const [tl, tr, br, bl] = orderCorners(corners);
     // Output size from the real edge lengths so the card ratio is preserved.
     const outWidth = Math.round((dist(tl, tr) + dist(bl, br)) / 2);
     const outHeight = Math.round((dist(tl, bl) + dist(tr, br)) / 2);
     if (outWidth < 50 || outHeight < 50) throw new Error('El recorte es demasiado pequeño');
 
-    const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, corners.flatMap((p) => [p.x, p.y]));
+    const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, [tl, tr, br, bl].flatMap((p) => [p.x, p.y]));
     const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
       0, 0, outWidth, 0, outWidth, outHeight, 0, outHeight,
     ]);
