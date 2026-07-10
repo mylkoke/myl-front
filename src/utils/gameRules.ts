@@ -133,6 +133,31 @@ export function hasInmunidadTalismanes(card: Card): boolean {
   return card.habilidadesEspeciales?.includes('inmunidad_talismanes') ?? false;
 }
 
+/**
+ * 'patriotas_no_anulables' (Manuel Blanco Encalada): while a card with this
+ * ability is in play, its controller's Patriota allies cannot be annulled.
+ */
+export function hasPatriotProtection(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('patriotas_no_anulables') ?? false;
+}
+
+/**
+ * Is `target` protected from annulment effects ("Anula un aliado…")?
+ * True when target is a Patriota ally and its OWN controller has a card with
+ * 'patriotas_no_anulables' in play. Every future annulment effect MUST check
+ * this guard before annulling a card (targeted annulments fail on protected
+ * cards; mass annulments skip them).
+ */
+export function isProtectedFromAnnulment(target: Card, owner: PlayerState): boolean {
+  return (
+    target.tipo === 'aliado' &&
+    target.raza === 'Patriota' &&
+    [...owner.defenseField, ...owner.attackField, ...owner.supportField].some(
+      hasPatriotProtection,
+    )
+  );
+}
+
 /** "Defensor": this ally cannot attack, only defend from the defense line. */
 export function hasDefensor(card: Card): boolean {
   return card.habilidadesEspeciales?.includes('defensor') ?? false;

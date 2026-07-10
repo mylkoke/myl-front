@@ -164,8 +164,8 @@ export const SEED_ABILITIES = [
   {
     code: 'patriotas_no_anulables',
     nombre: 'Patriotas no anulables',
-    descripcion: 'Tus cartas de Aliado Patriota no pueden ser anuladas.',
-    implemented: false,
+    descripcion: 'Mientras esta carta esté en juego, tus Aliados Patriota no pueden ser anulados: los efectos "Anula…" con objetivo fallan sobre ellos y las anulaciones masivas los ignoran.',
+    implemented: true,
     categoria: 'carta',
   },
   {
