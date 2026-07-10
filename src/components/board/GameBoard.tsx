@@ -21,7 +21,7 @@ import {
   ChevronRight, SkipForward, RefreshCw, Loader2, Settings, Flag, WifiOff, Sparkles,
 } from 'lucide-react';
 import { APP_VERSION } from '@/version';
-import { strengthLockedFor } from '@/utils/gameRules';
+import { hasImbloqueable, strengthLockedFor } from '@/utils/gameRules';
 import type { PlayerId } from '@/types/game.types';
 
 const EASE_IN: Easing  = 'easeIn';
@@ -581,18 +581,21 @@ export function GameBoard() {
                     {attacker.nombre} — {atkForce} ⚔
                   </div>
                   <p className="text-slate-400 text-xs mt-1">
-                    Elige un aliado para defender o recibe {atkForce} carta(s) de daño en tu
-                    Mazo Castillo.
+                    {hasImbloqueable(attacker)
+                      ? `${attacker.nombre} es Imbloqueable: no puedes declararle bloqueador.`
+                      : `Elige un aliado para defender o recibe ${atkForce} carta(s) de daño en tu Mazo Castillo.`}
                   </p>
                 </div>
 
-                {defenderPlayer.defenseField.length > 0 && (
+                {!hasImbloqueable(attacker) && defenderPlayer.defenseField.length > 0 && (
                   <div className="flex flex-wrap justify-center gap-2 mb-4 max-h-48 overflow-y-auto">
                     {defenderPlayer.defenseField.map((ally) => {
-                      const force =
-                        ally.fuerza +
-                        (defenderPlayer.equippedWeapons[ally.instanceId]?.bonusFuerza ?? 0) +
-                        (defenderPlayer.weaponTempBonuses[ally.instanceId] ?? 0);
+                      // 'fuerza_inmutable' rival: fuerza impresa, sin bonos
+                      const force = strengthLockedFor(defenderId, players)
+                        ? ally.fuerza
+                        : ally.fuerza +
+                          (defenderPlayer.equippedWeapons[ally.instanceId]?.bonusFuerza ?? 0) +
+                          (defenderPlayer.weaponTempBonuses[ally.instanceId] ?? 0);
                       return (
                         <button
                           key={ally.instanceId}

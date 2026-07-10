@@ -18,6 +18,7 @@ import {
   BLOCK_PUNISHMENT_MILL,
   GOLD_TALISMAN_YIELD,
   hasGoldTalismanAbility,
+  hasImbloqueable,
   isHandOnly,
   resolveInteractiveCombat,
   strengthLockedFor,
@@ -438,6 +439,16 @@ export const useGameStore = create<GameStore>()(
         }
 
         const defenderPlayer = players[defenderId];
+
+        // 'imbloqueable': no se puede declarar bloqueador contra este atacante.
+        const attackingCard = players[combat.attackerId].attackField.find(
+          (c) => c.instanceId === combat.attackerInstanceId
+        );
+        if (defenderInstanceId && attackingCard && hasImbloqueable(attackingCard)) {
+          get().addLog(`${attackingCard.nombre} es Imbloqueable: no puede ser bloqueado.`, 'error');
+          return;
+        }
+
         const blocker = defenderInstanceId
           ? defenderPlayer.defenseField.find((c) => c.instanceId === defenderInstanceId) ?? null
           : null;

@@ -148,6 +148,27 @@ export const SEED_ABILITIES = [
     categoria: 'carta',
   },
   {
+    code: 'imbloqueable',
+    nombre: 'Imbloqueable',
+    descripcion: 'Cuando este aliado ataca, el defensor no puede declararle bloqueador: el daño va directo al Mazo Castillo (la Guerra de Talismanes ocurre igual).',
+    implemented: true,
+    categoria: 'especial',
+  },
+  {
+    code: 'inmunidad_talismanes',
+    nombre: 'Inmunidad: Talismanes',
+    descripcion: 'Los talismanes no tienen ningún efecto sobre esta carta: los efectos de talismán con objetivo fallan sobre ella y los masivos la ignoran (p.ej. "Destruye un aliado en juego" no la destruye).',
+    implemented: true,
+    categoria: 'especial',
+  },
+  {
+    code: 'patriotas_no_anulables',
+    nombre: 'Patriotas no anulables',
+    descripcion: 'Tus cartas de Aliado Patriota no pueden ser anuladas.',
+    implemented: false,
+    categoria: 'carta',
+  },
+  {
     code: 'oro_talismanes',
     nombre: 'Oro para Talismanes',
     descripcion: 'Puedes pagar este Oro (moverlo a tu Zona de Oro Pagado) para generar 2 Oros que solo pueden usarse para jugar Talismanes. Activable durante tu turno o el del oponente; los Oros generados expiran al final del turno.',

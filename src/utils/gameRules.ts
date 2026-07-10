@@ -114,6 +114,25 @@ export function hasGoldTalismanAbility(card: Card): boolean {
   return card.habilidadesEspeciales?.includes('oro_talismanes') ?? false;
 }
 
+/**
+ * "Imbloqueable": when this ally attacks, the defender cannot declare a
+ * blocker against it — the attack always resolves as undefended (the
+ * Talisman War still happens; only the block is forbidden).
+ */
+export function hasImbloqueable(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('imbloqueable') ?? false;
+}
+
+/**
+ * "Inmunidad: Talismanes": talisman effects have NO effect on this card —
+ * targeted talisman effects fail on it and global talisman effects skip it
+ * (e.g. "Destruye un aliado en juego" cannot destroy it). Every future
+ * automated talisman effect MUST check this guard before touching a card.
+ */
+export function hasInmunidadTalismanes(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('inmunidad_talismanes') ?? false;
+}
+
 /** "Defensor": this ally cannot attack, only defend from the defense line. */
 export function hasDefensor(card: Card): boolean {
   return card.habilidadesEspeciales?.includes('defensor') ?? false;
