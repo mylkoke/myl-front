@@ -18,7 +18,10 @@ import {
   BLOCK_PUNISHMENT_MILL,
   GOLD_TALISMAN_YIELD,
   hasGoldTalismanAbility,
+  effectiveForce,
   hasImbloqueable,
+  hasWeakenAbility,
+  WEAKEN_GOLD_COST,
   isHandOnly,
   resolveInteractiveCombat,
   strengthLockedFor,
@@ -57,6 +60,7 @@ function buildInitialPlayer(id: PlayerId, name: string, rawDeck: Card[]): Player
     weaponTempBonuses: {},
     weaponAbilityUsedThisTurn: [],
     allyAbilityUsedThisTurn: [],
+    weakenedAllies: [],
     life: deck.length,
     goldCount: initialGold ? 1 : 0,
     talismanGold: 0,
@@ -150,6 +154,16 @@ interface GameActions {
    * propio o el del oponente; los oros virtuales expiran al terminar el turno.
    */
   activateGoldTalisman: (goldInstanceId: string, playerId: PlayerId) => void;
+  /**
+   * 'debilitar_aliado' (Manuel Baquedano): en tu Vigilia, paga 1 oro — el
+   * aliado objetivo tiene Fuerza 0 hasta la Fase Final. Repetible.
+   */
+  weakenAlly: (
+    sourceInstanceId: string,
+    targetInstanceId: string,
+    targetOwnerId: PlayerId,
+    playerId: PlayerId,
+  ) => void;
   /** Replace the whole game state (online sync). */
   hydrateState: (state: GameState) => void;
   addLog: (msg: string, type?: GameLogEntry['type']) => void;
@@ -384,10 +398,7 @@ export const useGameStore = create<GameStore>()(
 
         const defenderId: PlayerId = playerId === 'player' ? 'opponent' : 'player';
         const attackingAlly: CardInPlay = { ...ally, attackedThisTurn: true, tapped: true };
-        // 'fuerza_inmutable' rival en juego: el aliado pelea con su fuerza impresa.
-        const bonus = strengthLockedFor(playerId, players)
-          ? 0
-          : player.equippedWeapons[allyInstanceId]?.bonusFuerza ?? 0;
+        const attackForce = effectiveForce(ally, player, players);
 
         // Declaring an attack jumps the game straight into the battle phase.
         set((s) => ({
@@ -413,7 +424,7 @@ export const useGameStore = create<GameStore>()(
         }));
 
         get().addLog(
-          `${player.name} ataca con ${ally.nombre} (${ally.fuerza + bonus} ⚔). ${players[defenderId].name} puede defender.`,
+          `${player.name} ataca con ${ally.nombre} (${attackForce} ⚔). ${players[defenderId].name} puede defender.`,
           'combat'
         );
 
@@ -598,20 +609,10 @@ export const useGameStore = create<GameStore>()(
           ? defenderPlayer.defenseField.find((c) => c.instanceId === combat.defenderInstanceId) ?? null
           : null;
 
-        // 'fuerza_inmutable' rival en juego: ese bando pelea con su fuerza
-        // impresa (se ignoran bonos de armas y temporales).
-        const atkForce = strengthLockedFor(combat.attackerId, players)
-          ? attacker.fuerza
-          : attacker.fuerza +
-            (attackerPlayer.equippedWeapons[attacker.instanceId]?.bonusFuerza ?? 0) +
-            (attackerPlayer.weaponTempBonuses[attacker.instanceId] ?? 0);
-        const defForce = defender
-          ? strengthLockedFor(defenderId, players)
-            ? defender.fuerza
-            : defender.fuerza +
-              (defenderPlayer.equippedWeapons[defender.instanceId]?.bonusFuerza ?? 0) +
-              (defenderPlayer.weaponTempBonuses[defender.instanceId] ?? 0)
-          : null;
+        // Fuerza efectiva (bonos de arma/temporales, 'fuerza_inmutable',
+        // 'debilitar_aliado') centralizada en effectiveForce.
+        const atkForce = effectiveForce(attacker, attackerPlayer, players);
+        const defForce = defender ? effectiveForce(defender, defenderPlayer, players) : null;
 
         const outcome = resolveInteractiveCombat(atkForce, defForce);
 
@@ -877,6 +878,8 @@ export const useGameStore = create<GameStore>()(
               weaponTempBonuses: {},
               // Los oros virtuales 'oro_talismanes' expiran al terminar el turno.
               talismanGold: 0,
+              // 'debilitar_aliado' dura "hasta la Fase Final": expira aquí.
+              weakenedAllies: [],
             },
             [nextId]: {
               ...next,
@@ -886,6 +889,7 @@ export const useGameStore = create<GameStore>()(
               weaponTempBonuses: {},
               weaponAbilityUsedThisTurn: [],
               allyAbilityUsedThisTurn: [],
+              weakenedAllies: [],
               // Los aliados que entraron el turno anterior ya llevan en juego
               // desde esta Agrupación: pueden atacar este turno.
               defenseField: next.defenseField.map((c) => ({ ...c, summonedThisTurn: false })),
@@ -987,6 +991,72 @@ export const useGameStore = create<GameStore>()(
         });
         get().addLog(
           `${player.name} pagó ${goldCard.nombre}: genera ${GOLD_TALISMAN_YIELD} Oros que solo pueden pagar Talismanes (hasta el final del turno).`,
+          'action'
+        );
+      },
+
+      weakenAlly: (sourceInstanceId, targetInstanceId, targetOwnerId, playerId) => {
+        const { players, turn, combat, isGameOver } = get();
+        if (isGameOver || combat) return;
+        const player = players[playerId];
+
+        if (turn.currentPlayer !== playerId || turn.phase !== 'vigilia') {
+          get().addLog('Esta habilidad solo puede activarse en tu Vigilia.', 'error');
+          return;
+        }
+        const source = [...player.defenseField, ...player.attackField].find(
+          (c) => c.instanceId === sourceInstanceId
+        );
+        if (!source || !hasWeakenAbility(source)) return;
+        if (player.goldCount < WEAKEN_GOLD_COST) {
+          get().addLog('No tienes oro suficiente para activar esta habilidad.', 'error');
+          return;
+        }
+
+        const targetOwner = players[targetOwnerId];
+        const target = [...targetOwner.defenseField, ...targetOwner.attackField].find(
+          (c) => c.instanceId === targetInstanceId && c.tipo === 'aliado'
+        );
+        if (!target) return;
+
+        // 'fuerza_inmutable': si el bando del objetivo tiene la fuerza
+        // bloqueada, tampoco puede reducírsele a 0.
+        if (strengthLockedFor(targetOwnerId, players)) {
+          get().addLog(
+            `Una carta en juego impide modificar la Fuerza de ${target.nombre}.`,
+            'error'
+          );
+          return;
+        }
+
+        // Pagar 1 oro: el último oro disponible pasa a la zona de Oro Pagado.
+        const paid = player.gold[player.gold.length - 1];
+        set((s) => {
+          const p = s.players[playerId];
+          const owner = s.players[targetOwnerId];
+          const payerPatch = {
+            gold: p.gold.slice(0, -1),
+            goldPaid: [...p.goldPaid, paid],
+            goldCount: p.goldCount - 1,
+            goldSpentThisTurn: true,
+          };
+          const ownerPatch = {
+            weakenedAllies: [...owner.weakenedAllies, targetInstanceId],
+          };
+          return {
+            players: {
+              ...s.players,
+              [playerId]: { ...p, ...payerPatch },
+              [targetOwnerId]: {
+                ...s.players[targetOwnerId],
+                ...(targetOwnerId === playerId ? payerPatch : {}),
+                ...ownerPatch,
+              },
+            },
+          };
+        });
+        get().addLog(
+          `${source.nombre}: ${target.nombre} tiene Fuerza 0 hasta la Fase Final (−1 Oro).`,
           'action'
         );
       },

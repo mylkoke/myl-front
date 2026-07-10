@@ -21,7 +21,8 @@ import {
   ChevronRight, SkipForward, RefreshCw, Loader2, Settings, Flag, WifiOff, Sparkles,
 } from 'lucide-react';
 import { APP_VERSION } from '@/version';
-import { hasImbloqueable, strengthLockedFor } from '@/utils/gameRules';
+import { effectiveForce, hasImbloqueable } from '@/utils/gameRules';
+import { useTargetingStore } from '@/store/targetingStore';
 import type { PlayerId } from '@/types/game.types';
 
 const EASE_IN: Easing  = 'easeIn';
@@ -46,6 +47,8 @@ export function GameBoard() {
   const surrender = useGameStore((s) => s.surrender);
   const { endPlayerTurn, advancePhase, resetGame, defendWith, regroupGold, regroupAllies,
     passCombat, playCombatTalisman } = useGameActions();
+  const weakenTargeting = useTargetingStore((s) => s.weaken);
+  const cancelTargeting = useTargetingStore((s) => s.cancel);
 
   const [rotPhase, setRotPhase]       = useState<'idle' | 'out' | 'in'>('idle');
   const [handoffName, setHandoffName]   = useState('');
@@ -430,6 +433,21 @@ export function GameBoard() {
         </div>
       </motion.div>
 
+      {/* ── Targeting banner: eligiendo objetivo de 'debilitar_aliado' ── */}
+      {weakenTargeting && (
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 border border-red-500/50 rounded-full px-4 py-2 flex items-center gap-3 shadow-xl">
+          <span className="text-xs text-red-300 font-bold">
+            Elige un aliado: tendrá Fuerza 0 hasta la Fase Final
+          </span>
+          <button
+            onClick={cancelTargeting}
+            className="text-xs text-slate-400 hover:text-white underline"
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
+
       {/* ── Defense panel: shown while a combat awaits the defender ────── */}
       <AnimatePresence>
         {combat && !isGameOver && (() => {
@@ -440,12 +458,7 @@ export function GameBoard() {
             (c) => c.instanceId === combat.attackerInstanceId
           );
           if (!attacker) return null;
-          // 'fuerza_inmutable' rival en juego: fuerza impresa, sin bonos
-          const atkForce = strengthLockedFor(combat.attackerId, players)
-            ? attacker.fuerza
-            : attacker.fuerza +
-              (attackerPlayer.equippedWeapons[attacker.instanceId]?.bonusFuerza ?? 0) +
-              (attackerPlayer.weaponTempBonuses[attacker.instanceId] ?? 0);
+          const atkForce = effectiveForce(attacker, attackerPlayer, players);
 
           // ── Sub-fase: Guerra de Talismanes ──────────────────────────────
           if (combat.status === 'talisman_war') {
@@ -590,12 +603,7 @@ export function GameBoard() {
                 {!hasImbloqueable(attacker) && defenderPlayer.defenseField.length > 0 && (
                   <div className="flex flex-wrap justify-center gap-2 mb-4 max-h-48 overflow-y-auto">
                     {defenderPlayer.defenseField.map((ally) => {
-                      // 'fuerza_inmutable' rival: fuerza impresa, sin bonos
-                      const force = strengthLockedFor(defenderId, players)
-                        ? ally.fuerza
-                        : ally.fuerza +
-                          (defenderPlayer.equippedWeapons[ally.instanceId]?.bonusFuerza ?? 0) +
-                          (defenderPlayer.weaponTempBonuses[ally.instanceId] ?? 0);
+                      const force = effectiveForce(ally, defenderPlayer, players);
                       return (
                         <button
                           key={ally.instanceId}

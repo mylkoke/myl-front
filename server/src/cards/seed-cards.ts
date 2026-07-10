@@ -169,6 +169,13 @@ export const SEED_ABILITIES = [
     categoria: 'carta',
   },
   {
+    code: 'debilitar_aliado',
+    nombre: 'Debilitar aliado',
+    descripcion: 'En tu Vigilia, puedes pagar 1 Oro para que un Aliado objetivo en juego tenga Fuerza 0 hasta la Fase Final. Repetible mientras tengas oro.',
+    implemented: true,
+    categoria: 'carta',
+  },
+  {
     code: 'oro_talismanes',
     nombre: 'Oro para Talismanes',
     descripcion: 'Puedes pagar este Oro (moverlo a tu Zona de Oro Pagado) para generar 2 Oros que solo pueden usarse para jugar Talismanes. Activable durante tu turno o el del oponente; los Oros generados expiran al final del turno.',

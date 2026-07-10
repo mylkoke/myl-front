@@ -7,7 +7,7 @@ import { CardDetail } from '@/components/cards/CardDetail';
 import { useGameStore } from '@/store/gameStore';
 import { useGameActions } from '@/hooks/useGameActions';
 import { getLineCardSize } from '@/utils/cardSize';
-import { hasMachinery, strengthLockedFor } from '@/utils/gameRules';
+import { effectiveForce, hasMachinery } from '@/utils/gameRules';
 import { useDropZone } from '@/utils/dragManager';
 import { Shield, Sword, Layers } from 'lucide-react';
 
@@ -72,7 +72,7 @@ export function ThreeLineField({ playerId, isOpponent = false }: ThreeLineFieldP
   const defenseField   = useGameStore((s) => s.players[playerId].defenseField);
   const attackField    = useGameStore((s) => s.players[playerId].attackField);
   const supportField   = useGameStore((s) => s.players[playerId].supportField);
-  const strengthLocked = useGameStore((s) => strengthLockedFor(playerId, s.players));
+  const boardPlayers = useGameStore((s) => s.players);
   const equippedWeapons = useGameStore((s) => s.players[playerId].equippedWeapons);
   const turn           = useGameStore((s) => s.turn);
   const player         = useGameStore((s) => s.players[playerId]);
@@ -135,11 +135,9 @@ export function ThreeLineField({ playerId, isOpponent = false }: ThreeLineFieldP
             <div key={card.instanceId} data-fx-instance={card.instanceId} className="relative card-enter">
               <CardView
                 card={{
+                  // Fuerza efectiva: bonos, 'fuerza_inmutable' y 'debilitar_aliado'
                   ...card,
-                  // 'fuerza_inmutable' en juego: fuerza impresa, sin bono de arma
-                  fuerza: strengthLocked
-                    ? card.fuerza
-                    : card.fuerza + (equippedWeapons[card.instanceId]?.bonusFuerza ?? 0),
+                  fuerza: effectiveForce(card, boardPlayers[playerId], boardPlayers),
                 }}
                 onClick={() => setDetailCard(card)}
                 isOpponent={isOpponent}

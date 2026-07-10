@@ -21,6 +21,7 @@ export function useGameActions() {
   const endTurn       = useGameStore((s) => s.endTurn);
   const summonCaudilloFromDeck = useGameStore((s) => s.summonCaudilloFromDeck);
   const activateGoldTalisman = useGameStore((s) => s.activateGoldTalisman);
+  const weakenAlly = useGameStore((s) => s.weakenAlly);
   const regroupGold    = useGameStore((s) => s.regroupGold);
   const regroupAllies  = useGameStore((s) => s.regroupAllies);
   const resetGame      = useGameStore((s) => s.resetGame);
@@ -81,6 +82,7 @@ export function useGameActions() {
       activateGoldTalisman(goldInstanceId, playerId);
       pushCurrentState();
     },
+    weakenAlly:    guarded(weakenAlly),
     regroupGold:   guarded(regroupGold),
     regroupAllies: guarded(regroupAllies),
     selectCard,

@@ -158,6 +158,38 @@ export function isProtectedFromAnnulment(target: Card, owner: PlayerState): bool
   );
 }
 
+/** Gold cost of the 'debilitar_aliado' activated ability. */
+export const WEAKEN_GOLD_COST = 1;
+
+/**
+ * 'debilitar_aliado' (Manuel Baquedano): in your Vigilia, pay 1 gold — a
+ * target ally in play has Force 0 until the Final Phase. Repeatable while
+ * you have gold (the card text sets no per-turn limit).
+ */
+export function hasWeakenAbility(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('debilitar_aliado') ?? false;
+}
+
+/**
+ * Effective combat force of an ally — single source of truth:
+ * - weakened ('debilitar_aliado') → 0, ignoring every bonus;
+ * - strength-locked ('fuerza_inmutable' rival) → printed fuerza only;
+ * - otherwise printed fuerza + equipped weapon bonus + temp bonuses.
+ */
+export function effectiveForce(
+  ally: CardInPlay,
+  owner: PlayerState,
+  players: Record<PlayerId, PlayerState>,
+): number {
+  if (owner.weakenedAllies?.includes(ally.instanceId)) return 0;
+  if (strengthLockedFor(owner.id, players)) return ally.fuerza;
+  return (
+    ally.fuerza +
+    (owner.equippedWeapons[ally.instanceId]?.bonusFuerza ?? 0) +
+    (owner.weaponTempBonuses[ally.instanceId] ?? 0)
+  );
+}
+
 /** "Defensor": this ally cannot attack, only defend from the defense line. */
 export function hasDefensor(card: Card): boolean {
   return card.habilidadesEspeciales?.includes('defensor') ?? false;

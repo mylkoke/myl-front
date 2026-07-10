@@ -54,6 +54,8 @@ export interface PlayerState {
   weaponAbilityUsedThisTurn: string[];
   /** instanceIds de aliados cuya habilidad activada ya se usó este turno */
   allyAbilityUsedThisTurn: string[];
+  /** instanceIds de aliados con Fuerza 0 hasta la Fase Final ('debilitar_aliado') */
+  weakenedAllies: string[];
 
   // ── Estado del jugador ─────────────────────────────────────────────────
   life: number;

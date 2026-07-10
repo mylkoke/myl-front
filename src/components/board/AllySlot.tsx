@@ -10,11 +10,15 @@ import { Sword } from 'lucide-react';
 import type { CardSize } from '@/utils/cardSize';
 import { DeckSearchModal } from './DeckSearchModal';
 import {
+  effectiveForce,
   hasCaudilloSummon,
+  hasWeakenAbility,
   isSummonableByCaudillo,
   strengthLockedFor,
   CAUDILLO_SUMMON_GOLD_COST,
+  WEAKEN_GOLD_COST,
 } from '@/utils/gameRules';
+import { useTargetingStore } from '@/store/targetingStore';
 
 interface AllySlotProps {
   ally: CardInPlay;
@@ -27,19 +31,22 @@ interface AllySlotProps {
 export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'md' }: AllySlotProps) {
   const [detailCard, setDetailCard] = useState<CardInPlay | null>(null);
   const [deckSearchOpen, setDeckSearchOpen] = useState(false);
-  const { equipWeapon, summonCaudilloFromDeck } = useGameActions();
+  const { equipWeapon, summonCaudilloFromDeck, weakenAlly } = useGameActions();
   const turn   = useGameStore((s) => s.turn);
   const combat = useGameStore((s) => s.combat);
   const player = useGameStore((s) => s.players[playerId]);
 
   const activateWeaponAbility = useGameStore((s) => s.activateWeaponAbility);
-  // 'fuerza_inmutable' rival en juego: se muestra la fuerza impresa, sin bonos.
+  // Fuerza efectiva centralizada (bonos, 'fuerza_inmutable', 'debilitar_aliado')
   const strengthLocked = useGameStore((s) => strengthLockedFor(playerId, s.players));
-  const tempBonus = strengthLocked ? 0 : player.weaponTempBonuses[ally.instanceId] ?? 0;
-  const effectiveForce = strengthLocked
-    ? ally.fuerza
-    : ally.fuerza + (weapon?.bonusFuerza ?? 0) + tempBonus;
-  const displayAlly: CardInPlay = { ...ally, fuerza: effectiveForce };
+  const weakened = player.weakenedAllies?.includes(ally.instanceId) ?? false;
+  const tempBonus = strengthLocked || weakened ? 0 : player.weaponTempBonuses[ally.instanceId] ?? 0;
+  const force = useGameStore((s) => effectiveForce(ally, s.players[playerId], s.players));
+  const displayAlly: CardInPlay = { ...ally, fuerza: force };
+
+  // Modo selección de objetivo ('debilitar_aliado'): este aliado es elegible.
+  const weakenTargeting = useTargetingStore((s) => s.weaken);
+  const cancelTargeting = useTargetingStore((s) => s.cancel);
 
   const isMyTurn = turn.currentPlayer === playerId && !isOpponent;
 
@@ -49,6 +56,16 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
     weaponHasActivatedAbility &&
     !player.weaponAbilityUsedThisTurn.includes(weapon!.instanceId) &&
     player.goldCount >= 1;
+
+  // 'debilitar_aliado': en tu Vigilia, paga 1 oro → un aliado objetivo tiene
+  // Fuerza 0 hasta la Fase Final (repetible).
+  const allyHasWeakenAbility = hasWeakenAbility(ally);
+  const canUseWeakenAbility =
+    isMyTurn &&
+    allyHasWeakenAbility &&
+    !combat &&
+    turn.phase === 'vigilia' &&
+    player.goldCount >= WEAKEN_GOLD_COST;
 
   // 'invocacion_caudillo': el aliado puede pagar 3 oros para invocar desde el
   // Mazo Castillo un aliado de su misma raza con coste ≤ 4, 1 vez por turno.
@@ -92,11 +109,27 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
 
         {/* Ally card */}
         <div className="relative z-10">
+          {/* Marco pulsante: aliado elegible mientras se elige objetivo */}
+          {weakenTargeting && (
+            <div className="absolute -inset-1 rounded-xl ring-2 ring-red-400 animate-pulse pointer-events-none z-30" />
+          )}
           <CardView
             card={displayAlly}
-            onClick={() => setDetailCard(ally)}
+            onClick={
+              weakenTargeting
+                ? () => {
+                    weakenAlly(
+                      weakenTargeting.sourceInstanceId,
+                      ally.instanceId,
+                      playerId,
+                      weakenTargeting.playerId,
+                    );
+                    cancelTargeting();
+                  }
+                : () => setDetailCard(ally)
+            }
             dragPayload={
-              !isOpponent
+              !isOpponent && !weakenTargeting
                 ? { card: ally, sourceZone: 'defense', sourcePlayer: playerId }
                 : undefined
             }
@@ -147,14 +180,26 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
             ? () => { activateWeaponAbility(weapon!.instanceId, ally.instanceId, playerId); setDetailCard(null); }
             : detailCard && detailCard.instanceId === ally.instanceId && allyHasSummonAbility && !isOpponent
             ? () => { setDetailCard(null); setDeckSearchOpen(true); }
+            : detailCard && detailCard.instanceId === ally.instanceId && allyHasWeakenAbility && !isOpponent
+            ? () => {
+                setDetailCard(null);
+                // Entra en modo selección: los aliados del tablero se iluminan.
+                useTargetingStore.getState().startWeaken(ally.instanceId, playerId);
+              }
             : undefined
         }
         canUseSpecialAbility={
-          detailCard?.instanceId === ally.instanceId ? canUseSummonAbility : canUseWeaponAbility
+          detailCard?.instanceId === ally.instanceId
+            ? allyHasSummonAbility
+              ? canUseSummonAbility
+              : canUseWeakenAbility
+            : canUseWeaponAbility
         }
         specialAbilityLabel={
           detailCard?.instanceId === ally.instanceId
-            ? `Invocar Caudillo (−${CAUDILLO_SUMMON_GOLD_COST} Oros)`
+            ? allyHasSummonAbility
+              ? `Invocar Caudillo (−${CAUDILLO_SUMMON_GOLD_COST} Oros)`
+              : `Debilitar: Fuerza 0 hasta la Fase Final (−${WEAKEN_GOLD_COST} Oro)`
             : undefined
         }
       />
