@@ -56,6 +56,12 @@ export interface CardFormData {
   bonusFuerza?: number;
   habilidadesEspeciales: string[];
   imageUrl: string;
+  /** Nº de la carta dentro de su edición (p.ej. 35 en "HC-35/160") */
+  numeroCarta: number;
+  /** Total de cartas de la edición (p.ej. 160) */
+  cantidadEdicion: number;
+  /** Código de la serie/expansión (p.ej. "HC") */
+  expansion: string;
 }
 
 function toServerPayload(data: CardFormData) {
@@ -69,6 +75,9 @@ function toServerPayload(data: CardFormData) {
     ...(data.bonusFuerza !== undefined ? { bonus_fuerza: data.bonusFuerza } : {}),
     special_abilities: data.habilidadesEspeciales,
     image_url: data.imageUrl,
+    numero_carta: data.numeroCarta,
+    cantidad_edicion: data.cantidadEdicion,
+    ...(data.expansion.trim() ? { expansion: data.expansion.trim() } : {}),
   };
 }
 

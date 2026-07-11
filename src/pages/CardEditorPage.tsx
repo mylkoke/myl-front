@@ -39,6 +39,9 @@ const EMPTY_FORM: CardFormData = {
   habilidad: '',
   habilidadesEspeciales: [],
   imageUrl: '',
+  numeroCarta: 0,
+  cantidadEdicion: 0,
+  expansion: '',
 };
 
 function asCardInPlay(card: Card): CardInPlay {
@@ -126,6 +129,9 @@ export function CardEditorPage() {
       bonusFuerza: card.bonusFuerza,
       habilidadesEspeciales: card.habilidadesEspeciales ?? [],
       imageUrl: card.imagen,
+      numeroCarta: card.numeroCarta ?? 0,
+      cantidadEdicion: card.cantidadEdicion ?? 0,
+      expansion: card.expansion ?? '',
     });
     updateLocalImage(null);
     setFormOpen(true);
@@ -544,6 +550,40 @@ export function CardEditorPage() {
                 type="number" min={0}
                 value={form.fuerza}
                 onChange={(e) => setForm((f) => ({ ...f, fuerza: Number(e.target.value) }))}
+                className={inputCls}
+              />
+            </label>
+          </div>
+
+          {/* Numeración de la edición: "HC-35/160" → serie HC, nº 35, total 160 */}
+          <div className="grid grid-cols-3 gap-2">
+            <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-slate-500">
+              Serie
+              <input
+                type="text"
+                placeholder="HC"
+                value={form.expansion}
+                onChange={(e) => setForm((f) => ({ ...f, expansion: e.target.value.toUpperCase() }))}
+                className={inputCls}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-slate-500">
+              Nº de carta
+              <input
+                type="number" min={0}
+                placeholder="35"
+                value={form.numeroCarta}
+                onChange={(e) => setForm((f) => ({ ...f, numeroCarta: Number(e.target.value) }))}
+                className={inputCls}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-slate-500">
+              Total edición
+              <input
+                type="number" min={0}
+                placeholder="160"
+                value={form.cantidadEdicion}
+                onChange={(e) => setForm((f) => ({ ...f, cantidadEdicion: Number(e.target.value) }))}
                 className={inputCls}
               />
             </label>

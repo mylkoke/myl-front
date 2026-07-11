@@ -116,12 +116,16 @@ export function CardDetail({ card, isOpen, onClose, onPlay, canPlay, playLabel, 
               <User size={10} />
               <span>Ilustrador: {card.ilustrador}</span>
             </div>
-            <div className="flex items-center gap-1">
-              <Hash size={10} />
-              <span>#{card.numeroCarta} — Edición: {card.cantidadEdicion}</span>
-            </div>
-            {card.expansion && (
-              <div>Expansión: <span className="text-slate-400">{card.expansion}</span></div>
+            {/* Numeración: "HC-35/160" (serie-número/total de la edición) */}
+            {(card.numeroCarta > 0 || card.expansion) && (
+              <div className="flex items-center gap-1">
+                <Hash size={10} />
+                <span>
+                  {card.expansion ? `${card.expansion}-` : '#'}
+                  {card.numeroCarta}
+                  {card.cantidadEdicion > 0 && `/${card.cantidadEdicion}`}
+                </span>
+              </div>
             )}
           </div>
         </div>
