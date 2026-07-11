@@ -86,9 +86,19 @@ export function hasUnica(card: Card): boolean {
 /** General MYL deck rule: up to 3 copies of the same card per deck. */
 export const MAX_COPIES_PER_CARD = 3;
 
-/** Max copies of `card` allowed in a deck ('unica' → 1). */
+/**
+ * "Orbe": the strictest deck-building restriction — only ONE card with the
+ * Orbe keyword in the whole castle deck, regardless of its name (unlike
+ * 'unica', which restricts per-name). Including an Orbe card forbids both a
+ * second copy of it AND any other Orbe card.
+ */
+export function hasOrbe(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('orbe') ?? false;
+}
+
+/** Max copies of `card` allowed in a deck ('unica' y 'orbe' → 1). */
 export function maxCopiesInDeck(card: Card): number {
-  return hasUnica(card) ? 1 : MAX_COPIES_PER_CARD;
+  return hasUnica(card) || hasOrbe(card) ? 1 : MAX_COPIES_PER_CARD;
 }
 
 /**

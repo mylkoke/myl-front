@@ -169,6 +169,13 @@ export const SEED_ABILITIES = [
     categoria: 'carta',
   },
   {
+    code: 'orbe',
+    nombre: 'Orbe',
+    descripcion: 'Restricción de construcción de mazo (la más estricta): solo puedes tener UNA carta con la habilidad Orbe en todo tu Mazo Castillo, sin importar su nombre — prohíbe la segunda copia y cualquier otra carta Orbe distinta.',
+    implemented: true,
+    categoria: 'especial',
+  },
+  {
     code: 'anular_respuesta',
     nombre: 'Anulación en respuesta',
     descripcion: 'Talismán de respuesta: durante la ventana de 10 s tras jugarse un Aliado o Talismán rival, puedes jugarlo para ANULAR esa carta — la carta anulada se remueve del juego (zona R) y robas tantas cartas como su Coste. Respeta Inmunidad: Talismanes y la protección de Patriotas.',

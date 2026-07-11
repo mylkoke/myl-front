@@ -7,7 +7,7 @@ import { CardDetail } from '@/components/cards/CardDetail';
 import { Button } from '@/components/ui/Button';
 import { getServices } from '@/services';
 import { useAuthStore } from '@/store/authStore';
-import { maxCopiesInDeck } from '@/utils/gameRules';
+import { hasOrbe, maxCopiesInDeck } from '@/utils/gameRules';
 
 const MAX_DECK = 60;
 
@@ -68,6 +68,23 @@ export function DeckEditorPage() {
     if (total >= MAX_DECK) {
       setMessage(`El mazo ya tiene el máximo de ${MAX_DECK} cartas`);
       return;
+    }
+    // 'Orbe': solo UNA carta con Orbe en todo el Castillo, sin importar el
+    // nombre (incluir una prohíbe la segunda copia y cualquier otra Orbe).
+    if (hasOrbe(card)) {
+      const orbeInDeck = Object.entries(deckMap).find(([id, qty]) => {
+        const c = byId.get(id);
+        return qty > 0 && c && hasOrbe(c);
+      });
+      if (orbeInDeck) {
+        const existing = byId.get(orbeInDeck[0]);
+        setMessage(
+          existing?.id === card.id
+            ? `${card.nombre} es Orbe: solo puedes tener 1 carta con Orbe en tu Castillo`
+            : `Ya tienes una carta Orbe en el mazo (${existing?.nombre}): solo se permite una en todo el Castillo`,
+        );
+        return;
+      }
     }
     // Regla general: máx. 3 copias por carta; 'Única' → máx. 1 copia por mazo.
     const max = maxCopiesInDeck(card);
