@@ -30,6 +30,25 @@ const CARD_TYPES: CardType[] = ['aliado', 'totem', 'arma', 'talisman', 'oro'];
 type UploadTarget = 'drive' | 'cloudinary';
 const UPLOAD_TARGET_KEY = 'myl-upload-target';
 
+/** Total de cartas por serie/edición (fijo por edición): HC son 160. */
+const SERIES_TOTALS: Record<string, number> = {
+  HC: 160,
+};
+
+/**
+ * Props para campos numéricos que permiten ESCRIBIR con normalidad:
+ * input de texto con teclado numérico, vacío cuando el valor es 0
+ * (los type="number" controlados con 0 inicial solo dejaban usar las flechas).
+ */
+const numericProps = (value: number, onValue: (n: number) => void) => ({
+  type: 'text' as const,
+  inputMode: 'numeric' as const,
+  pattern: '[0-9]*',
+  value: value === 0 ? '' : String(value),
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+    onValue(Number(e.target.value.replace(/\D/g, '')) || 0),
+});
+
 const EMPTY_FORM: CardFormData = {
   nombre: '',
   tipo: 'aliado',
@@ -538,18 +557,14 @@ export function CardEditorPage() {
             <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-slate-500">
               Coste
               <input
-                type="number" min={0}
-                value={form.coste}
-                onChange={(e) => setForm((f) => ({ ...f, coste: Number(e.target.value) }))}
+                {...numericProps(form.coste, (n) => setForm((f) => ({ ...f, coste: n })))}
                 className={inputCls}
               />
             </label>
             <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-slate-500">
               Fuerza
               <input
-                type="number" min={0}
-                value={form.fuerza}
-                onChange={(e) => setForm((f) => ({ ...f, fuerza: Number(e.target.value) }))}
+                {...numericProps(form.fuerza, (n) => setForm((f) => ({ ...f, fuerza: n })))}
                 className={inputCls}
               />
             </label>
@@ -563,27 +578,31 @@ export function CardEditorPage() {
                 type="text"
                 placeholder="HC"
                 value={form.expansion}
-                onChange={(e) => setForm((f) => ({ ...f, expansion: e.target.value.toUpperCase() }))}
+                onChange={(e) => {
+                  const serie = e.target.value.toUpperCase();
+                  // El total es fijo por edición: se autocompleta si la serie es conocida
+                  setForm((f) => ({
+                    ...f,
+                    expansion: serie,
+                    cantidadEdicion: SERIES_TOTALS[serie] ?? f.cantidadEdicion,
+                  }));
+                }}
                 className={inputCls}
               />
             </label>
             <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-slate-500">
               Nº de carta
               <input
-                type="number" min={0}
                 placeholder="35"
-                value={form.numeroCarta}
-                onChange={(e) => setForm((f) => ({ ...f, numeroCarta: Number(e.target.value) }))}
+                {...numericProps(form.numeroCarta, (n) => setForm((f) => ({ ...f, numeroCarta: n })))}
                 className={inputCls}
               />
             </label>
             <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-slate-500">
               Total edición
               <input
-                type="number" min={0}
                 placeholder="160"
-                value={form.cantidadEdicion}
-                onChange={(e) => setForm((f) => ({ ...f, cantidadEdicion: Number(e.target.value) }))}
+                {...numericProps(form.cantidadEdicion, (n) => setForm((f) => ({ ...f, cantidadEdicion: n })))}
                 className={inputCls}
               />
             </label>
@@ -593,9 +612,7 @@ export function CardEditorPage() {
             <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-slate-500">
               Bonus de fuerza (arma)
               <input
-                type="number" min={0}
-                value={form.bonusFuerza ?? 0}
-                onChange={(e) => setForm((f) => ({ ...f, bonusFuerza: Number(e.target.value) }))}
+                {...numericProps(form.bonusFuerza ?? 0, (n) => setForm((f) => ({ ...f, bonusFuerza: n })))}
                 className={inputCls}
               />
             </label>
