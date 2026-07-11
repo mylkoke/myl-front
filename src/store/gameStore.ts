@@ -24,10 +24,13 @@ import {
   hasAnnulResponse,
   RESPONSE_WINDOW_MS,
   hasDrawDiscardGold,
+  cannotLeavePlay,
   hasImbloqueable,
   hasOroInicial,
   hasPlayFromGraveyard,
+  hasShuffleDraw,
   hasTalismanRecycle,
+  SHUFFLE_DRAW_COUNT,
   isBasicGold,
   hasWeakenAbility,
   TALISMAN_RECYCLE_DISCOUNT,
@@ -116,6 +119,7 @@ export function buildInitialState(
     winner: null,
     isBoardRotating: false,
     pendingDiscard: null,
+    pendingShuffleChoice: null,
     responseWindow: null,
     gameLog: [
       createLogEntry('Cada jugador comienza con su oro inicial en juego.', 'system'),
@@ -209,6 +213,11 @@ interface GameActions {
     talismanInstanceId: string,
     playerId: PlayerId,
   ) => void;
+  /**
+   * 'barajar_mano_roba8': resuelve la decisión — si acepta, baraja la mano
+   * en el Mazo Castillo (orden aleatorio) y roba 8 cartas nuevas.
+   */
+  resolveShuffleChoice: (accept: boolean, playerId: PlayerId) => void;
   /**
    * 'anular_respuesta': durante la ventana de respuesta, juega el talismán
    * de anulación — la carta jugada se remueve del juego y el respondedor
@@ -406,6 +415,12 @@ export const useGameStore = create<GameStore>()(
               expiresAt: Date.now() + RESPONSE_WINDOW_MS,
             },
           });
+        }
+
+        // 'barajar_mano_roba8': al entrar en juego, su dueño decide si baraja
+        // su mano en el Castillo y roba 8.
+        if (!get().isGameOver && card.tipo === 'aliado' && hasShuffleDraw(card)) {
+          set({ pendingShuffleChoice: { playerId, cardName: card.nombre } });
         }
       },
 
@@ -702,7 +717,9 @@ export const useGameStore = create<GameStore>()(
           const inDefense = owner.defenseField.find((c) => c.instanceId === instanceId);
           const card = inAttack ?? inDefense;
           if (!card) return owner;
-          if (hasIndestructible(card)) return owner;
+          // 'indestructible' sobrevive a la destrucción; 'no_sale_del_juego'
+          // no puede abandonar el campo por ningún medio.
+          if (hasIndestructible(card) || cannotLeavePlay(card)) return owner;
           const weapon = owner.equippedWeapons[instanceId];
           const { [instanceId]: _, ...restWeapons } = owner.equippedWeapons;
           return {
@@ -1215,6 +1232,11 @@ export const useGameStore = create<GameStore>()(
             expiresAt: Date.now() + RESPONSE_WINDOW_MS,
           },
         });
+
+        // 'barajar_mano_roba8': también aplica al entrar desde estas zonas.
+        if (hasShuffleDraw(card)) {
+          set({ pendingShuffleChoice: { playerId, cardName: card.nombre } });
+        }
       },
 
       playRecycledTalisman: (sourceInstanceId, talismanInstanceId, playerId) => {
@@ -1295,6 +1317,44 @@ export const useGameStore = create<GameStore>()(
             expiresAt: Date.now() + RESPONSE_WINDOW_MS,
           },
         });
+      },
+
+      resolveShuffleChoice: (accept, playerId) => {
+        const { players, pendingShuffleChoice } = get();
+        if (!pendingShuffleChoice || pendingShuffleChoice.playerId !== playerId) return;
+        const player = players[playerId];
+
+        if (!accept) {
+          set({ pendingShuffleChoice: null });
+          get().addLog(`${player.name} conserva su mano.`, 'system');
+          return;
+        }
+
+        // La mano entra al Castillo y el mazo SE BARAJA (regla: el mazo se
+        // re-aleatoriza siempre que entran cartas o se mira su contenido).
+        const shuffled = shuffleDeck([...player.deck, ...player.hand]);
+        const { drawn, remaining } = drawCards(shuffled, Math.min(SHUFFLE_DRAW_COUNT, shuffled.length));
+        set((s) => {
+          const p = s.players[playerId];
+          return {
+            pendingShuffleChoice: null,
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                hand: drawn.map(createCardInPlay),
+                deck: remaining,
+                life: remaining.length,
+              },
+            },
+          };
+        });
+        get().addLog(
+          `${pendingShuffleChoice.cardName}: ${player.name} baraja su mano en su Castillo y roba ${Math.min(SHUFFLE_DRAW_COUNT, shuffled.length)} cartas.`,
+          'action'
+        );
+        const { isOver, winnerId } = checkGameOver(get().players);
+        if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
       },
 
       respondWithAnnul: (responseCardInstanceId, playerId) => {

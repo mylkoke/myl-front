@@ -120,6 +120,12 @@ export interface GameState {
    * tiene 10 s para responder con un talismán de anulación ("en respuesta
    * a"). Mientras está abierta, el juego queda en pausa. Se sincroniza online.
    */
+  /**
+   * Decisión pendiente de 'barajar_mano_roba8' (Manuel Rodríguez): al entrar
+   * en juego, su dueño puede barajar su mano en el Castillo y robar 8.
+   * Se sincroniza online.
+   */
+  pendingShuffleChoice: { playerId: PlayerId; cardName: string } | null;
   responseWindow: {
     /** Carta recién jugada (ya en su zona) que puede ser anulada */
     cardInstanceId: string;

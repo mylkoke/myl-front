@@ -24,6 +24,7 @@ export function useGameActions() {
   const activateGoldDrawDiscard = useGameStore((s) => s.activateGoldDrawDiscard);
   const discardFromHand = useGameStore((s) => s.discardFromHand);
   const respondWithAnnul = useGameStore((s) => s.respondWithAnnul);
+  const resolveShuffleChoice = useGameStore((s) => s.resolveShuffleChoice);
   const passResponse = useGameStore((s) => s.passResponse);
   const closeResponseWindow = useGameStore((s) => s.closeResponseWindow);
   const weakenAlly = useGameStore((s) => s.weakenAlly);
@@ -98,6 +99,7 @@ export function useGameActions() {
     discardFromHand: ownerGated<[string]>(discardFromHand),
     // Ventana de respuesta: el respondedor actúa fuera de su turno.
     respondWithAnnul: ownerGated<[string]>(respondWithAnnul),
+    resolveShuffleChoice: ownerGated<[boolean]>(resolveShuffleChoice),
     passResponse: ownerGated<[]>(passResponse),
     closeResponseWindow: () => {
       closeResponseWindow();

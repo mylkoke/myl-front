@@ -52,7 +52,8 @@ export function GameBoard() {
   const cancelTargeting = useTargetingStore((s) => s.cancel);
   const pendingDiscard = useGameStore((s) => s.pendingDiscard);
   const responseWindow = useGameStore((s) => s.responseWindow);
-  const { discardFromHand, respondWithAnnul, passResponse, closeResponseWindow } = useGameActions();
+  const { discardFromHand, respondWithAnnul, passResponse, closeResponseWindow, resolveShuffleChoice } = useGameActions();
+  const pendingShuffleChoice = useGameStore((s) => s.pendingShuffleChoice);
 
   const [rotPhase, setRotPhase]       = useState<'idle' | 'out' | 'in'>('idle');
   const [handoffName, setHandoffName]   = useState('');
@@ -513,6 +514,36 @@ export function GameBoard() {
           </div>
         );
       })()}
+
+      {/* ── Decisión de 'barajar_mano_roba8' (Manuel Rodríguez) ────────── */}
+      {pendingShuffleChoice && (!isOnline || mySeat === pendingShuffleChoice.playerId) && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
+          <div className="w-full max-w-sm bg-slate-900 border border-blue-500/40 rounded-2xl p-4 sm:p-6 shadow-2xl text-center">
+            <div className="text-blue-300 text-xs uppercase tracking-widest font-bold">
+              {pendingShuffleChoice.cardName}
+            </div>
+            <p className="text-slate-300 text-sm mt-2 mb-4">
+              ¿Barajar tu mano en tu Mazo Castillo y robar 8 cartas nuevas?
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="primary"
+                fullWidth
+                onClick={() => resolveShuffleChoice(true, pendingShuffleChoice.playerId)}
+              >
+                Sí, barajar y robar 8
+              </Button>
+              <Button
+                variant="secondary"
+                fullWidth
+                onClick={() => resolveShuffleChoice(false, pendingShuffleChoice.playerId)}
+              >
+                Conservar mi mano
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Descarte obligatorio ('oro_robar_descartar') ──────────────── */}
       {pendingDiscard && (!isOnline || mySeat === pendingDiscard) && (

@@ -214,12 +214,60 @@ export function hasAnnulResponse(card: Card): boolean {
 }
 
 /**
+ * 'inanulable' (Manuel Rodríguez): this card cannot be annulled by ANY card.
+ */
+export function hasInanulable(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('inanulable') ?? false;
+}
+
+/**
+ * 'no_sale_del_juego' (Manuel Rodríguez): this card cannot leave play by any
+ * means — destruction, removal, exile, bounce… Every current and future
+ * effect that takes a card off the battlefield MUST check this guard.
+ */
+export function cannotLeavePlay(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('no_sale_del_juego') ?? false;
+}
+
+/** Cards drawn by 'barajar_mano_roba8' when the shuffle option is accepted. */
+export const SHUFFLE_DRAW_COUNT = 8;
+
+/**
+ * 'barajar_mano_roba8' (Manuel Rodríguez): when this card enters play, its
+ * owner MAY shuffle their hand into the castle deck; if they do, they draw 8
+ * new cards. (Shuffling rule: the deck is re-randomized whenever cards enter
+ * it or it is looked at — not when drawing blindly from the top.)
+ */
+export function hasShuffleDraw(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('barajar_mano_roba8') ?? false;
+}
+
+/**
+ * 'fuerza1_no_caudillos' (Manuel Rodríguez): while this card is on the board,
+ * every ally that is NOT raza Caudillo has Force 1 (set — ignores bonuses).
+ * Affects both players' allies.
+ */
+export function hasCaudilloForceLock(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('fuerza1_no_caudillos') ?? false;
+}
+
+/** Is a 'fuerza1_no_caudillos' card on any player's board? */
+export function caudilloForceLockActive(players: Record<PlayerId, PlayerState>): boolean {
+  return Object.values(players).some((p) =>
+    [...p.defenseField, ...p.attackField].some(hasCaudilloForceLock),
+  );
+}
+
+/**
  * Can `card` be annulled by a talisman response?
- * Returns the blocking reason, or null when annullable. Checks the two
- * standing protections: 'inmunidad_talismanes' on the card itself and the
- * Patriota protection ('patriotas_no_anulables') of its controller.
+ * Returns the blocking reason, or null when annullable. Checks the standing
+ * protections: 'inanulable' on the card itself, 'inmunidad_talismanes' and
+ * the Patriota protection ('patriotas_no_anulables') of its controller.
  */
 export function annulBlockReason(target: Card, owner: PlayerState): string | null {
+  if (hasInanulable(target)) {
+    return `${target.nombre} no puede ser anulada por ninguna carta.`;
+  }
   if (hasInmunidadTalismanes(target)) {
     return `${target.nombre} tiene Inmunidad: Talismanes — no puede ser anulada.`;
   }
@@ -299,6 +347,11 @@ export function effectiveForce(
 ): number {
   if (owner.weakenedAllies?.includes(ally.instanceId)) return 0;
   if (strengthLockedFor(owner.id, players)) return ally.fuerza;
+  // 'fuerza1_no_caudillos' en mesa: los aliados no-Caudillo tienen Fuerza 1
+  // fija (ignora bonos). Los Caudillo no se ven afectados.
+  if (ally.tipo === 'aliado' && ally.raza !== 'Caudillo' && caudilloForceLockActive(players)) {
+    return 1;
+  }
   return (
     ally.fuerza +
     (owner.equippedWeapons[ally.instanceId]?.bonusFuerza ?? 0) +

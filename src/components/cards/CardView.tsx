@@ -140,46 +140,27 @@ export function CardView({
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 rounded-lg" />
       </div>
 
-      {/* Aliado: fuerza SIEMPRE arriba-izquierda (como el diseño real de la
-          carta); coste arriba-derecha solo en tamaños no compactos */}
+      {/* Aliado: fuerza SIEMPRE arriba-izquierda (como el diseño real) */}
       {card.tipo === 'aliado' && (
-        <>
-          <div className={`absolute top-0.5 left-0.5 md:top-1 md:left-1 z-10 rounded-full bg-red-700 flex items-center justify-center font-bold text-white shadow ${BADGE_CLASSES[size]}`}>
-            {card.fuerza}
-          </div>
-          {!isCompact && (
-            <div className={`absolute top-1 right-1 rounded-full bg-yellow-500 flex items-center justify-center font-bold text-black shadow ${BADGE_CLASSES[size]}`}>
-              {card.coste}
-            </div>
-          )}
-        </>
+        <div className={`absolute top-0.5 left-0.5 md:top-1 md:left-1 z-10 rounded-full bg-red-700 flex items-center justify-center font-bold text-white shadow ${BADGE_CLASSES[size]}`}>
+          {card.fuerza}
+        </div>
       )}
 
-      {/* Cost badge — arriba-derecha para tótem/talismán (arma lo maneja internamente) */}
-      {!isCompact && card.tipo !== 'oro' && card.tipo !== 'aliado' && card.tipo !== 'arma' && (
-        <div className={`absolute top-1 right-1 rounded-full bg-yellow-500 flex items-center justify-center font-bold text-black shadow ${BADGE_CLASSES[size]}`}>
+      {/* Coste SIEMPRE arriba-derecha con fondo amarillo (todos los tipos
+          salvo oro, que lleva la moneda amarilla sin número) */}
+      {card.tipo !== 'oro' ? (
+        <div className={`absolute top-0.5 right-0.5 md:top-1 md:right-1 z-10 rounded-full bg-yellow-500 flex items-center justify-center font-bold text-black shadow ${BADGE_CLASSES[size]}`}>
           {card.coste}
         </div>
-      )}
-
-      {/* Gold card marker — moneda arriba-derecha */}
-      {!isCompact && card.tipo === 'oro' && (
-        <div className={`absolute top-1 right-1 rounded-full bg-yellow-400 flex items-center justify-center shadow border border-yellow-300 ${BADGE_CLASSES[size]}`}>
-          ✦
-        </div>
+      ) : (
+        <div className={`absolute top-0.5 right-0.5 md:top-1 md:right-1 z-10 rounded-full bg-yellow-400 shadow border border-yellow-300 ${BADGE_CLASSES[size]}`} />
       )}
 
       {/* Etiqueta tipo arriba-izquierda (solo arma) */}
       {!isCompact && card.tipo === 'arma' && (
         <div className="absolute top-1 left-1 flex items-center gap-0.5 bg-black/60 rounded px-1 py-0.5">
           <span className={`text-red-300 font-bold uppercase tracking-wider leading-none ${size === 'lg' || size === 'xl' ? 'text-[8px]' : 'text-[7px]'}`}>⚔ Arma</span>
-        </div>
-      )}
-
-      {/* Coste arma arriba-derecha */}
-      {!isCompact && card.tipo === 'arma' && (
-        <div className={`absolute top-1 right-1 rounded-full bg-yellow-500 flex items-center justify-center font-bold text-black shadow ${BADGE_CLASSES[size]}`}>
-          {card.coste}
         </div>
       )}
 
