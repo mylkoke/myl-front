@@ -169,6 +169,13 @@ export const SEED_ABILITIES = [
     categoria: 'carta',
   },
   {
+    code: 'anular_respuesta',
+    nombre: 'Anulación en respuesta',
+    descripcion: 'Talismán de respuesta: durante la ventana de 10 s tras jugarse un Aliado o Talismán rival, puedes jugarlo para ANULAR esa carta — la carta anulada se remueve del juego (zona R) y robas tantas cartas como su Coste. Respeta Inmunidad: Talismanes y la protección de Patriotas.',
+    implemented: true,
+    categoria: 'carta',
+  },
+  {
     code: 'oro_inicial',
     nombre: 'Oro Inicial',
     descripcion: 'Keyword de preparación: la regla general exige que el oro inicial de la partida sea un Oro básico (sin habilidades); una carta con Oro Inicial también puede colocarse como tu primer oro del juego.',

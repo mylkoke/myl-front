@@ -22,7 +22,7 @@ import {
   ChevronRight, SkipForward, RefreshCw, Loader2, Settings, Flag, WifiOff, Sparkles,
 } from 'lucide-react';
 import { APP_VERSION } from '@/version';
-import { effectiveForce, hasImbloqueable } from '@/utils/gameRules';
+import { effectiveForce, hasAnnulResponse, hasImbloqueable } from '@/utils/gameRules';
 import { useTargetingStore } from '@/store/targetingStore';
 import type { PlayerId } from '@/types/game.types';
 
@@ -51,7 +51,8 @@ export function GameBoard() {
   const weakenTargeting = useTargetingStore((s) => s.weaken);
   const cancelTargeting = useTargetingStore((s) => s.cancel);
   const pendingDiscard = useGameStore((s) => s.pendingDiscard);
-  const { discardFromHand } = useGameActions();
+  const responseWindow = useGameStore((s) => s.responseWindow);
+  const { discardFromHand, respondWithAnnul, passResponse, closeResponseWindow } = useGameActions();
 
   const [rotPhase, setRotPhase]       = useState<'idle' | 'out' | 'in'>('idle');
   const [handoffName, setHandoffName]   = useState('');
@@ -73,6 +74,20 @@ export function GameBoard() {
   const opponentOnline = useOnlineStore((s) => s.opponentOnline);
   const resetOnline   = useOnlineStore((s) => s.reset);
   const isOnline = mode === 'online' && mySeat !== null;
+
+  // Reloj de la ventana de respuesta: tick cada 250 ms mientras esté abierta;
+  // al expirar la cierra el dueño de la carta jugada (o cualquiera en local).
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    if (!responseWindow) return;
+    const iv = setInterval(() => setNowTick(Date.now()), 250);
+    return () => clearInterval(iv);
+  }, [responseWindow]);
+  useEffect(() => {
+    if (!responseWindow) return;
+    if (nowTick < responseWindow.expiresAt) return;
+    if (!isOnline || mySeat === responseWindow.cardOwnerId) closeResponseWindow();
+  }, [nowTick, responseWindow, isOnline, mySeat, closeResponseWindow]);
 
   // FX de daño al mazo: se detecta por diff de estado (mazo baja Y cementerio
   // sube a la vez), así funciona en local y en AMBOS dispositivos online
@@ -435,6 +450,69 @@ export function GameBoard() {
           />
         </div>
       </motion.div>
+
+      {/* ── Ventana de respuesta: el rival puede anular la carta jugada ── */}
+      {responseWindow && (() => {
+        const secondsLeft = Math.max(0, Math.ceil((responseWindow.expiresAt - nowTick) / 1000));
+        const responder = players[responseWindow.responderId];
+        const isMyResponse = !isOnline || mySeat === responseWindow.responderId;
+        if (!isMyResponse) {
+          return (
+            <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 border border-purple-500/40 rounded-full px-4 py-2 flex items-center gap-2 shadow-xl">
+              <Loader2 size={13} className="animate-spin text-purple-400" />
+              <span className="text-xs text-slate-300">
+                {responder.name} puede responder a {responseWindow.cardName}… ({secondsLeft}s)
+              </span>
+            </div>
+          );
+        }
+        const responses = responder.hand.filter(
+          (c) =>
+            hasAnnulResponse(c) &&
+            c.coste <= responder.goldCount + responder.talismanGold,
+        );
+        return (
+          <div className="absolute inset-x-0 bottom-0 z-50 flex justify-center p-3 pointer-events-none">
+            <div className="pointer-events-auto w-full max-w-md bg-slate-900/95 border border-purple-500/50 rounded-2xl p-3 sm:p-4 shadow-2xl">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <div className="text-purple-300 text-[10px] uppercase tracking-widest font-bold">
+                    Ventana de respuesta — {secondsLeft}s
+                  </div>
+                  <p className="text-slate-300 text-xs mt-0.5">
+                    {responder.name}: puedes responder a <b>{responseWindow.cardName}</b>
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => passResponse(responseWindow.responderId)}
+                >
+                  No responder
+                </Button>
+              </div>
+              {responses.length > 0 ? (
+                <div className="flex flex-wrap justify-center gap-2">
+                  {responses.map((c) => (
+                    <CardView
+                      key={c.instanceId}
+                      card={c}
+                      size="sm"
+                      onClick={() =>
+                        respondWithAnnul(c.instanceId, responseWindow.responderId)
+                      }
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500 text-center">
+                  No tienes talismanes de respuesta jugables.
+                </p>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Descarte obligatorio ('oro_robar_descartar') ──────────────── */}
       {pendingDiscard && (!isOnline || mySeat === pendingDiscard) && (

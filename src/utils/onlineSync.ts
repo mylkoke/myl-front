@@ -16,6 +16,7 @@ export function snapshotGameState(): GameState {
     gameLog: s.gameLog.slice(0, 30),
     isBoardRotating: false,
     pendingDiscard: s.pendingDiscard,
+    responseWindow: s.responseWindow,
   };
 }
 

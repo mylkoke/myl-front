@@ -190,6 +190,35 @@ export function controlsPatriota(player: PlayerState): boolean {
   );
 }
 
+/** Duration of the response window after an ally/talisman is played. */
+export const RESPONSE_WINDOW_MS = 10_000;
+
+/**
+ * 'anular_respuesta' (Duelo a Siete Pasos SP): response talisman. During the
+ * response window it annuls the just-played Ally or Talisman: the annulled
+ * card is REMOVED from the game (zona R) and the responder draws as many
+ * cards as the annulled card's coste.
+ */
+export function hasAnnulResponse(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('anular_respuesta') ?? false;
+}
+
+/**
+ * Can `card` be annulled by a talisman response?
+ * Returns the blocking reason, or null when annullable. Checks the two
+ * standing protections: 'inmunidad_talismanes' on the card itself and the
+ * Patriota protection ('patriotas_no_anulables') of its controller.
+ */
+export function annulBlockReason(target: Card, owner: PlayerState): string | null {
+  if (hasInmunidadTalismanes(target)) {
+    return `${target.nombre} tiene Inmunidad: Talismanes — no puede ser anulada.`;
+  }
+  if (isProtectedFromAnnulment(target, owner)) {
+    return `${target.nombre} está protegida: tus Aliados Patriota no pueden ser anulados.`;
+  }
+  return null;
+}
+
 /** Gold cost of the 'debilitar_aliado' activated ability. */
 export const WEAKEN_GOLD_COST = 1;
 

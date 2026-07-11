@@ -18,8 +18,11 @@ import {
   BLOCK_PUNISHMENT_MILL,
   GOLD_TALISMAN_YIELD,
   hasGoldTalismanAbility,
+  annulBlockReason,
   controlsPatriota,
   effectiveForce,
+  hasAnnulResponse,
+  RESPONSE_WINDOW_MS,
   hasDrawDiscardGold,
   hasImbloqueable,
   hasOroInicial,
@@ -110,6 +113,7 @@ export function buildInitialState(
     winner: null,
     isBoardRotating: false,
     pendingDiscard: null,
+    responseWindow: null,
     gameLog: [
       createLogEntry('Cada jugador comienza con su oro inicial en juego.', 'system'),
       createLogEntry('¡Partida iniciada! Turno del Jugador — Vigilia.', 'system'),
@@ -183,6 +187,16 @@ interface GameActions {
   activateGoldDrawDiscard: (goldInstanceId: string, playerId: PlayerId) => void;
   /** Resuelve el descarte obligatorio: carta de la mano → cementerio. */
   discardFromHand: (cardInstanceId: string, playerId: PlayerId) => void;
+  /**
+   * 'anular_respuesta': durante la ventana de respuesta, juega el talismán
+   * de anulación — la carta jugada se remueve del juego y el respondedor
+   * roba tantas cartas como el coste de la carta anulada.
+   */
+  respondWithAnnul: (responseCardInstanceId: string, playerId: PlayerId) => void;
+  /** El respondedor renuncia a responder: cierra la ventana de inmediato. */
+  passResponse: (playerId: PlayerId) => void;
+  /** Cierra la ventana de respuesta si ya expiró (idempotente). */
+  closeResponseWindow: () => void;
   /** Replace the whole game state (online sync). */
   hydrateState: (state: GameState) => void;
   addLog: (msg: string, type?: GameLogEntry['type']) => void;
@@ -231,9 +245,13 @@ export const useGameStore = create<GameStore>()(
 
       // ── Play a card from hand ─────────────────────────────────────────────
       playCard: (card, playerId) => {
-        const { players, turn } = get();
+        const { players, turn, responseWindow } = get();
         const player = players[playerId];
 
+        if (responseWindow) {
+          get().addLog('Espera: hay una ventana de respuesta abierta.', 'error');
+          return;
+        }
         const { allowed, reason } = canPlayCard(card, player, turn);
         if (!allowed) {
           get().addLog(reason ?? 'No puedes jugar esa carta', 'error');
@@ -351,6 +369,22 @@ export const useGameStore = create<GameStore>()(
 
         const { isOver, winnerId } = checkGameOver(get().players);
         if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
+
+        // ── Ventana de respuesta: tras jugar un Aliado o Talismán, el
+        // oponente tiene 10 s para responder con un talismán de anulación.
+        if (!get().isGameOver && (card.tipo === 'aliado' || card.tipo === 'talisman')) {
+          const responderId: PlayerId = playerId === 'player' ? 'opponent' : 'player';
+          set({
+            responseWindow: {
+              cardInstanceId: card.instanceId,
+              cardName: card.nombre,
+              cardCoste: card.coste,
+              cardOwnerId: playerId,
+              responderId,
+              expiresAt: Date.now() + RESPONSE_WINDOW_MS,
+            },
+          });
+        }
       },
 
       // ── Equip weapon via drag-drop ────────────────────────────────────────
@@ -399,9 +433,13 @@ export const useGameStore = create<GameStore>()(
 
       // ── Declare attack: defense → attack line + open defense window ───────
       declareAttack: (allyInstanceId, playerId) => {
-        const { players, turn, combat } = get();
+        const { players, turn, combat, responseWindow } = get();
         const player = players[playerId];
 
+        if (responseWindow) {
+          get().addLog('Espera: hay una ventana de respuesta abierta.', 'error');
+          return;
+        }
         if (combat) {
           get().addLog('Ya hay un combate en curso.', 'error');
           return;
@@ -820,6 +858,10 @@ export const useGameStore = create<GameStore>()(
       // ── Advance phase ─────────────────────────────────────────────────────
       // Fases MYL: Agrupación → Vigilia → Batalla Mitológica → Fase Final
       advancePhase: () => {
+        if (get().responseWindow) {
+          get().addLog('Espera: hay una ventana de respuesta abierta.', 'error');
+          return;
+        }
         if (get().combat) {
           get().addLog('Hay un combate pendiente: primero se debe defender.', 'error');
           return;
@@ -850,6 +892,10 @@ export const useGameStore = create<GameStore>()(
       //     (oro pagado o aliados en ataque) arranca en 'agrupacion'; si no,
       //     se salta directo a 'vigilia' para evitar un paso vacío.
       endTurn: () => {
+        if (get().responseWindow) {
+          get().addLog('Espera: hay una ventana de respuesta abierta.', 'error');
+          return;
+        }
         if (get().combat) {
           get().addLog('Hay un combate pendiente: primero se debe defender.', 'error');
           return;
@@ -1083,6 +1129,111 @@ export const useGameStore = create<GameStore>()(
           };
         });
         get().addLog(`${player.name} descartó ${card.nombre}.`, 'action');
+      },
+
+      respondWithAnnul: (responseCardInstanceId, playerId) => {
+        const { players, responseWindow } = get();
+        if (!responseWindow || playerId !== responseWindow.responderId) return;
+        if (Date.now() > responseWindow.expiresAt) {
+          get().closeResponseWindow();
+          return;
+        }
+        const responder = players[playerId];
+        const responseCard = responder.hand.find(
+          (c) => c.instanceId === responseCardInstanceId
+        );
+        if (!responseCard || responseCard.tipo !== 'talisman' || !hasAnnulResponse(responseCard)) {
+          return;
+        }
+        if (responseCard.coste > responder.goldCount + responder.talismanGold) {
+          get().addLog(`Necesitas ${responseCard.coste} de oro para jugar ${responseCard.nombre}.`, 'error');
+          return;
+        }
+
+        // Localizar la carta jugada en las zonas de su dueño (aliado en la
+        // línea de defensa; talismán ya resuelto en el cementerio).
+        const owner = players[responseWindow.cardOwnerId];
+        const target =
+          owner.defenseField.find((c) => c.instanceId === responseWindow.cardInstanceId) ??
+          owner.graveyard.find((c) => c.instanceId === responseWindow.cardInstanceId);
+        if (!target) {
+          get().closeResponseWindow();
+          return;
+        }
+
+        // Protecciones vigentes: Inmunidad Talismanes y Patriotas de MBE.
+        const blockReason = annulBlockReason(target, owner);
+        if (blockReason) {
+          get().addLog(blockReason, 'error');
+          return;
+        }
+
+        // Pagar el talismán de respuesta (oros virtuales primero) → cementerio.
+        const fromVirtual = Math.min(responder.talismanGold, responseCard.coste);
+        const fromCards = responseCard.coste - fromVirtual;
+        const paid = responder.gold.slice(responder.gold.length - fromCards);
+        const remainingGold = responder.gold.slice(0, responder.gold.length - fromCards);
+
+        // Robo: tantas cartas como el coste de la carta anulada.
+        const drawCount = Math.min(target.coste, responder.deck.length);
+        const { drawn, remaining: newDeck } = drawCards(responder.deck, drawCount);
+
+        set((s) => {
+          const r = s.players[playerId];
+          const o = s.players[responseWindow.cardOwnerId];
+          const ownerPatch = {
+            // La carta anulada se REMUEVE del juego (zona R), venga de donde venga.
+            defenseField: o.defenseField.filter((c) => c.instanceId !== target.instanceId),
+            graveyard: o.graveyard.filter((c) => c.instanceId !== target.instanceId),
+            removed: [...o.removed, target],
+          };
+          const responderPatch = {
+            hand: [
+              ...r.hand.filter((c) => c.instanceId !== responseCardInstanceId),
+              ...drawn.map(createCardInPlay),
+            ],
+            graveyard: [...r.graveyard, responseCard],
+            gold: remainingGold,
+            goldPaid: [...r.goldPaid, ...paid],
+            goldCount: remainingGold.length,
+            talismanGold: r.talismanGold - fromVirtual,
+            goldSpentThisTurn: fromCards > 0 ? true : r.goldSpentThisTurn,
+            deck: newDeck,
+            life: newDeck.length,
+          };
+          const samePlayer = playerId === responseWindow.cardOwnerId;
+          return {
+            responseWindow: null,
+            players: {
+              ...s.players,
+              [responseWindow.cardOwnerId]: { ...o, ...ownerPatch, ...(samePlayer ? responderPatch : {}) },
+              [playerId]: samePlayer
+                ? { ...o, ...ownerPatch, ...responderPatch }
+                : { ...r, ...responderPatch },
+            },
+          };
+        });
+
+        get().addLog(
+          `${responder.name} responde con ${responseCard.nombre}: ${target.nombre} es anulada y removida del juego. ${responder.name} roba ${drawCount} carta(s).`,
+          'combat'
+        );
+        const { isOver, winnerId } = checkGameOver(get().players);
+        if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
+      },
+
+      passResponse: (playerId) => {
+        const { responseWindow } = get();
+        if (!responseWindow || playerId !== responseWindow.responderId) return;
+        set({ responseWindow: null });
+        get().addLog(`${get().players[playerId].name} no responde.`, 'system');
+      },
+
+      closeResponseWindow: () => {
+        const { responseWindow } = get();
+        if (!responseWindow || Date.now() < responseWindow.expiresAt) return;
+        set({ responseWindow: null });
+        get().addLog('Ventana de respuesta cerrada.', 'system');
       },
 
       weakenAlly: (sourceInstanceId, targetInstanceId, targetOwnerId, playerId) => {

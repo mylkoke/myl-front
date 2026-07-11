@@ -23,6 +23,9 @@ export function useGameActions() {
   const activateGoldTalisman = useGameStore((s) => s.activateGoldTalisman);
   const activateGoldDrawDiscard = useGameStore((s) => s.activateGoldDrawDiscard);
   const discardFromHand = useGameStore((s) => s.discardFromHand);
+  const respondWithAnnul = useGameStore((s) => s.respondWithAnnul);
+  const passResponse = useGameStore((s) => s.passResponse);
+  const closeResponseWindow = useGameStore((s) => s.closeResponseWindow);
   const weakenAlly = useGameStore((s) => s.weakenAlly);
 
   /** Acciones de oros activables en cualquier turno: en online solo se exige
@@ -91,6 +94,13 @@ export function useGameActions() {
     activateGoldTalisman: ownerGated<[string]>(activateGoldTalisman),
     activateGoldDrawDiscard: ownerGated<[string]>(activateGoldDrawDiscard),
     discardFromHand: ownerGated<[string]>(discardFromHand),
+    // Ventana de respuesta: el respondedor actúa fuera de su turno.
+    respondWithAnnul: ownerGated<[string]>(respondWithAnnul),
+    passResponse: ownerGated<[]>(passResponse),
+    closeResponseWindow: () => {
+      closeResponseWindow();
+      pushCurrentState();
+    },
     weakenAlly:    guarded(weakenAlly),
     regroupGold:   guarded(regroupGold),
     regroupAllies: guarded(regroupAllies),

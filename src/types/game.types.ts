@@ -115,6 +115,22 @@ export interface GameState {
    * antes de continuar. Se sincroniza online.
    */
   pendingDiscard: PlayerId | null;
+  /**
+   * Ventana de respuesta: tras jugarse un Aliado o Talismán, el oponente
+   * tiene 10 s para responder con un talismán de anulación ("en respuesta
+   * a"). Mientras está abierta, el juego queda en pausa. Se sincroniza online.
+   */
+  responseWindow: {
+    /** Carta recién jugada (ya en su zona) que puede ser anulada */
+    cardInstanceId: string;
+    cardName: string;
+    cardCoste: number;
+    cardOwnerId: PlayerId;
+    /** Jugador que puede responder (el oponente del que jugó) */
+    responderId: PlayerId;
+    /** Epoch ms en que expira la ventana */
+    expiresAt: number;
+  } | null;
 }
 
 export interface GameLogEntry {
