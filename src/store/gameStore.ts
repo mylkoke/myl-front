@@ -18,8 +18,12 @@ import {
   BLOCK_PUNISHMENT_MILL,
   GOLD_TALISMAN_YIELD,
   hasGoldTalismanAbility,
+  controlsPatriota,
   effectiveForce,
+  hasDrawDiscardGold,
   hasImbloqueable,
+  hasOroInicial,
+  isBasicGold,
   hasWeakenAbility,
   WEAKEN_GOLD_COST,
   isHandOnly,
@@ -35,9 +39,14 @@ function buildInitialPlayer(id: PlayerId, name: string, rawDeck: Card[]): Player
   const shuffled = shuffleDeck(rawDeck);
   const { drawn, remaining } = drawCards(shuffled, INITIAL_HAND_SIZE);
 
-  // Oro inicial: cada jugador comienza con el primer oro de su mazo ya jugado.
-  // Los oros 'solo_desde_mano' (p.ej. Escudo Nacional) no pueden ser oro inicial.
-  const initialGoldIdx = remaining.findIndex((c) => c.tipo === 'oro' && !isHandOnly(c));
+  // Oro inicial: cada jugador comienza con un oro de su mazo ya jugado.
+  // Regla: debe ser un ORO BÁSICO (sin habilidades) o tener la keyword
+  // 'oro_inicial' (Escarapela Nacional), que autoriza la excepción. Se
+  // prefiere el oro con la keyword si existe. Los 'solo_desde_mano' quedan
+  // excluidos por tener habilidades.
+  const keywordIdx = remaining.findIndex((c) => c.tipo === 'oro' && hasOroInicial(c));
+  const initialGoldIdx =
+    keywordIdx >= 0 ? keywordIdx : remaining.findIndex((c) => isBasicGold(c) && !isHandOnly(c));
   const initialGold = initialGoldIdx >= 0 ? remaining[initialGoldIdx] : null;
   const deck = initialGold
     ? remaining.filter((_, i) => i !== initialGoldIdx)
@@ -100,6 +109,7 @@ export function buildInitialState(
     isGameOver: false,
     winner: null,
     isBoardRotating: false,
+    pendingDiscard: null,
     gameLog: [
       createLogEntry('Cada jugador comienza con su oro inicial en juego.', 'system'),
       createLogEntry('¡Partida iniciada! Turno del Jugador — Vigilia.', 'system'),
@@ -164,6 +174,15 @@ interface GameActions {
     targetOwnerId: PlayerId,
     playerId: PlayerId,
   ) => void;
+  /**
+   * 'oro_robar_descartar' (Escarapela Nacional): paga ese oro (→ zona P) si
+   * controlas al menos un aliado Patriota → roba 1 carta del Mazo Castillo y
+   * deja un descarte obligatorio pendiente (pendingDiscard). Cualquier fase
+   * y cualquier turno; 1 vez por turno vía ciclo de zonas.
+   */
+  activateGoldDrawDiscard: (goldInstanceId: string, playerId: PlayerId) => void;
+  /** Resuelve el descarte obligatorio: carta de la mano → cementerio. */
+  discardFromHand: (cardInstanceId: string, playerId: PlayerId) => void;
   /** Replace the whole game state (online sync). */
   hydrateState: (state: GameState) => void;
   addLog: (msg: string, type?: GameLogEntry['type']) => void;
@@ -993,6 +1012,77 @@ export const useGameStore = create<GameStore>()(
           `${player.name} pagó ${goldCard.nombre}: genera ${GOLD_TALISMAN_YIELD} Oros que solo pueden pagar Talismanes (hasta el final del turno).`,
           'action'
         );
+      },
+
+      activateGoldDrawDiscard: (goldInstanceId, playerId) => {
+        const { players, isGameOver, pendingDiscard } = get();
+        if (isGameOver || pendingDiscard) return;
+        const player = players[playerId];
+        const goldCard = player.gold.find((c) => c.instanceId === goldInstanceId);
+        if (!goldCard || !hasDrawDiscardGold(goldCard)) return;
+
+        if (!controlsPatriota(player)) {
+          get().addLog('Necesitas controlar al menos un Aliado Patriota.', 'error');
+          return;
+        }
+        if (player.deck.length === 0) {
+          get().addLog('No quedan cartas en tu Mazo Castillo para robar.', 'error');
+          return;
+        }
+
+        // Pagar el oro (→ zona P), robar 1 del Mazo Castillo y dejar el
+        // descarte obligatorio pendiente. Sin restricción de turno/fase.
+        const { drawn, remaining: newDeck } = drawCards(player.deck, 1);
+        const drawnCard = createCardInPlay(drawn[0]);
+        set((s) => {
+          const p = s.players[playerId];
+          const remainingGold = p.gold.filter((c) => c.instanceId !== goldInstanceId);
+          return {
+            pendingDiscard: playerId,
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                gold: remainingGold,
+                goldPaid: [...p.goldPaid, goldCard],
+                goldCount: remainingGold.length,
+                goldSpentThisTurn: true,
+                deck: newDeck,
+                hand: [...p.hand, drawnCard],
+                life: newDeck.length,
+              },
+            },
+          };
+        });
+        get().addLog(
+          `${player.name} pagó ${goldCard.nombre}: roba 1 carta y debe descartar 1 carta de su mano.`,
+          'action'
+        );
+        const { isOver, winnerId } = checkGameOver(get().players);
+        if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId, pendingDiscard: null });
+      },
+
+      discardFromHand: (cardInstanceId, playerId) => {
+        const { players, pendingDiscard } = get();
+        if (pendingDiscard !== playerId) return;
+        const player = players[playerId];
+        const card = player.hand.find((c) => c.instanceId === cardInstanceId);
+        if (!card) return;
+        set((s) => {
+          const p = s.players[playerId];
+          return {
+            pendingDiscard: null,
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                hand: p.hand.filter((c) => c.instanceId !== cardInstanceId),
+                graveyard: [...p.graveyard, card],
+              },
+            },
+          };
+        });
+        get().addLog(`${player.name} descartó ${card.nombre}.`, 'action');
       },
 
       weakenAlly: (sourceInstanceId, targetInstanceId, targetOwnerId, playerId) => {

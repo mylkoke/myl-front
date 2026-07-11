@@ -169,6 +169,20 @@ export const SEED_ABILITIES = [
     categoria: 'carta',
   },
   {
+    code: 'oro_inicial',
+    nombre: 'Oro Inicial',
+    descripcion: 'Keyword de preparación: la regla general exige que el oro inicial de la partida sea un Oro básico (sin habilidades); una carta con Oro Inicial también puede colocarse como tu primer oro del juego.',
+    implemented: true,
+    categoria: 'especial',
+  },
+  {
+    code: 'oro_robar_descartar',
+    nombre: 'Robar y descartar',
+    descripcion: 'Una vez por turno, si controlas al menos un Aliado Patriota, puedes pagar este Oro (moverlo a tu Zona de Oro Pagado) para robar 1 carta de tu Mazo Castillo y luego descartar obligatoriamente 1 carta de tu mano. Activable en cualquier fase, en tu turno o en el del oponente.',
+    implemented: true,
+    categoria: 'carta',
+  },
+  {
     code: 'debilitar_aliado',
     nombre: 'Debilitar aliado',
     descripcion: 'En tu Vigilia, puedes pagar 1 Oro para que un Aliado objetivo en juego tenga Fuerza 0 hasta la Fase Final. Repetible mientras tengas oro.',

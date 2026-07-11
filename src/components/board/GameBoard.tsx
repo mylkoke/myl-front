@@ -7,6 +7,7 @@ import { useGameActions } from '@/hooks/useGameActions';
 import { useOnlineStore } from '@/store/onlineStore';
 import { apiGameSyncService } from '@/services/api/gameSyncService';
 import { PlayerArea } from './PlayerArea';
+import { CardView } from '@/components/cards/CardView';
 import { Separator } from './Separator';
 import { Button } from '@/components/ui/Button';
 import { SettingsPanel } from '@/components/ui/SettingsPanel';
@@ -49,6 +50,8 @@ export function GameBoard() {
     passCombat, playCombatTalisman } = useGameActions();
   const weakenTargeting = useTargetingStore((s) => s.weaken);
   const cancelTargeting = useTargetingStore((s) => s.cancel);
+  const pendingDiscard = useGameStore((s) => s.pendingDiscard);
+  const { discardFromHand } = useGameActions();
 
   const [rotPhase, setRotPhase]       = useState<'idle' | 'out' | 'in'>('idle');
   const [handoffName, setHandoffName]   = useState('');
@@ -432,6 +435,42 @@ export function GameBoard() {
           />
         </div>
       </motion.div>
+
+      {/* ── Descarte obligatorio ('oro_robar_descartar') ──────────────── */}
+      {pendingDiscard && (!isOnline || mySeat === pendingDiscard) && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
+          <div className="w-full max-w-md bg-slate-900 border border-yellow-500/40 rounded-2xl p-4 sm:p-6 shadow-2xl">
+            <div className="text-center mb-3">
+              <div className="text-yellow-400 text-xs uppercase tracking-widest font-bold">
+                Descarte obligatorio
+              </div>
+              <p className="text-slate-300 text-xs mt-1">
+                Elige una carta de tu mano para enviarla al Cementerio.
+              </p>
+            </div>
+            <div className="flex flex-wrap justify-center gap-2 max-h-64 overflow-y-auto">
+              {players[pendingDiscard].hand.map((card) => (
+                <CardView
+                  key={card.instanceId}
+                  card={card}
+                  size="sm"
+                  onClick={() => discardFromHand(card.instanceId, pendingDiscard)}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Esperando el descarte del rival (online) ───────────────────── */}
+      {pendingDiscard && isOnline && mySeat !== pendingDiscard && (
+        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 border border-yellow-500/40 rounded-full px-4 py-2 flex items-center gap-2 shadow-xl">
+          <Loader2 size={13} className="animate-spin text-yellow-400" />
+          <span className="text-xs text-slate-300">
+            {players[pendingDiscard].name} está descartando una carta…
+          </span>
+        </div>
+      )}
 
       {/* ── Targeting banner: eligiendo objetivo de 'debilitar_aliado' ── */}
       {weakenTargeting && (

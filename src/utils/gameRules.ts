@@ -158,6 +158,38 @@ export function isProtectedFromAnnulment(target: Card, owner: PlayerState): bool
   );
 }
 
+/**
+ * "Oro Inicial": setup keyword. The general rule requires the initial gold
+ * (auto-played at game start) to be a BASIC gold — one with no special
+ * abilities. A gold with this keyword is also allowed to be the initial gold.
+ */
+export function hasOroInicial(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('oro_inicial') ?? false;
+}
+
+/** Basic gold: tipo oro with no special abilities (mechanics-free). */
+export function isBasicGold(card: Card): boolean {
+  return card.tipo === 'oro' && (card.habilidadesEspeciales?.length ?? 0) === 0;
+}
+
+/**
+ * 'oro_robar_descartar' (Escarapela Nacional): once per turn (enforced by the
+ * zone cycle: paying moves it to goldPaid and it only returns on your
+ * Agrupación regroup), if you control at least one Patriota ally, pay this
+ * gold → draw 1 card from your castle deck, then MANDATORY discard 1 card
+ * from hand. Activatable in any phase, during either player's turn.
+ */
+export function hasDrawDiscardGold(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('oro_robar_descartar') ?? false;
+}
+
+/** Does `player` control at least one Patriota ally on the board? */
+export function controlsPatriota(player: PlayerState): boolean {
+  return [...player.defenseField, ...player.attackField].some(
+    (c) => c.tipo === 'aliado' && c.raza === 'Patriota',
+  );
+}
+
 /** Gold cost of the 'debilitar_aliado' activated ability. */
 export const WEAKEN_GOLD_COST = 1;
 

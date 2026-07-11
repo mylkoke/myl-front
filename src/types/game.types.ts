@@ -109,6 +109,12 @@ export interface GameState {
   winner: PlayerId | null;
   gameLog: GameLogEntry[];
   isBoardRotating: boolean;
+  /**
+   * Jugador con un descarte OBLIGATORIO pendiente (p.ej. tras activar
+   * 'oro_robar_descartar'): debe elegir una carta de su mano → cementerio
+   * antes de continuar. Se sincroniza online.
+   */
+  pendingDiscard: PlayerId | null;
 }
 
 export interface GameLogEntry {

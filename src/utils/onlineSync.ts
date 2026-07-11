@@ -15,6 +15,7 @@ export function snapshotGameState(): GameState {
     winner: s.winner,
     gameLog: s.gameLog.slice(0, 30),
     isBoardRotating: false,
+    pendingDiscard: s.pendingDiscard,
   };
 }
 

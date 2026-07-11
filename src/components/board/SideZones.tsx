@@ -7,7 +7,7 @@ import { CardView } from '@/components/cards/CardView';
 import { useGameStore } from '@/store/gameStore';
 import { useGameActions } from '@/hooks/useGameActions';
 import { useDropZone } from '@/utils/dragManager';
-import { GOLD_TALISMAN_YIELD, hasGoldTalismanAbility } from '@/utils/gameRules';
+import { GOLD_TALISMAN_YIELD, hasDrawDiscardGold, hasGoldTalismanAbility } from '@/utils/gameRules';
 
 interface SideZonesProps {
   player: PlayerState;
@@ -202,7 +202,7 @@ const ZONE_META: Record<InspectableZone, { title: string; letter: string }> = {
 
 export function SideZones({ player, playerId, isOpponent = false }: SideZonesProps) {
   const [viewerZone, setViewerZone] = useState<InspectableZone | null>(null);
-  const { activateGoldTalisman } = useGameActions();
+  const { activateGoldTalisman, activateGoldDrawDiscard } = useGameActions();
 
   // Regla: un jugador solo puede revisar SUS PROPIAS zonas. Punto de extensión:
   // cuando una habilidad/habilidad especial permita mirar zonas del oponente,
@@ -267,14 +267,20 @@ export function SideZones({ player, playerId, isOpponent = false }: SideZonesPro
           letter={ZONE_META[viewerZone].letter}
           cards={viewerCards}
           detailAction={
-            // 'oro_talismanes': pagar el oro desde la zona O propia genera
-            // 2 oros virtuales solo para talismanes (en cualquier turno).
+            // Oros con habilidad activable desde la zona O propia (cualquier turno):
+            // 'oro_talismanes' (+2 oros para talismanes) y
+            // 'oro_robar_descartar' (roba 1 y descarta 1, requiere Patriota).
             viewerZone === 'gold' && !isOpponent
               ? (card) =>
                   hasGoldTalismanAbility(card)
                     ? {
                         label: `Pagar: +${GOLD_TALISMAN_YIELD} Oros para Talismanes`,
                         onUse: () => activateGoldTalisman(card.instanceId, playerId),
+                      }
+                    : hasDrawDiscardGold(card)
+                    ? {
+                        label: 'Pagar: roba 1 carta y descarta 1',
+                        onUse: () => activateGoldDrawDiscard(card.instanceId, playerId),
                       }
                     : null
               : undefined

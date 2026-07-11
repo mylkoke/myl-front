@@ -21,7 +21,24 @@ export function useGameActions() {
   const endTurn       = useGameStore((s) => s.endTurn);
   const summonCaudilloFromDeck = useGameStore((s) => s.summonCaudilloFromDeck);
   const activateGoldTalisman = useGameStore((s) => s.activateGoldTalisman);
+  const activateGoldDrawDiscard = useGameStore((s) => s.activateGoldDrawDiscard);
+  const discardFromHand = useGameStore((s) => s.discardFromHand);
   const weakenAlly = useGameStore((s) => s.weakenAlly);
+
+  /** Acciones de oros activables en cualquier turno: en online solo se exige
+   *  ser el dueño del asiento (no que sea tu turno). */
+  const ownerGated =
+    <A extends unknown[]>(fn: (...args: [...A, PlayerId]) => void) =>
+    (...args: [...A, PlayerId]) => {
+      const { mode, mySeat } = useOnlineStore.getState();
+      const playerId = args[args.length - 1] as PlayerId;
+      if (mode === 'online' && mySeat !== playerId) {
+        addLog('Solo puedes usar tus propias cartas.', 'error');
+        return;
+      }
+      fn(...args);
+      pushCurrentState();
+    };
   const regroupGold    = useGameStore((s) => s.regroupGold);
   const regroupAllies  = useGameStore((s) => s.regroupAllies);
   const resetGame      = useGameStore((s) => s.resetGame);
@@ -71,17 +88,9 @@ export function useGameActions() {
     advancePhase:  guarded(advancePhase),
     endPlayerTurn: guarded(() => endTurn()),
     summonCaudilloFromDeck: guarded(summonCaudilloFromDeck),
-    // 'oro_talismanes' es activable también en el turno del oponente: en online
-    // solo se exige ser el dueño del asiento (no que sea tu turno).
-    activateGoldTalisman: (goldInstanceId: string, playerId: PlayerId) => {
-      const { mode, mySeat } = useOnlineStore.getState();
-      if (mode === 'online' && mySeat !== playerId) {
-        addLog('Solo puedes pagar tus propios oros.', 'error');
-        return;
-      }
-      activateGoldTalisman(goldInstanceId, playerId);
-      pushCurrentState();
-    },
+    activateGoldTalisman: ownerGated<[string]>(activateGoldTalisman),
+    activateGoldDrawDiscard: ownerGated<[string]>(activateGoldDrawDiscard),
+    discardFromHand: ownerGated<[string]>(discardFromHand),
     weakenAlly:    guarded(weakenAlly),
     regroupGold:   guarded(regroupGold),
     regroupAllies: guarded(regroupAllies),
