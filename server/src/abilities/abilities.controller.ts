@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { IsIn, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { IsArray, IsIn, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { AbilityCategory, SpecialAbility, SpecialAbilityDocument } from './special-ability.schema';
 import { SEED_ABILITIES } from '../cards/seed-cards';
 import { JwtAuthGuard, Roles, RolesGuard } from '../auth/guards';
@@ -26,6 +26,10 @@ class CreateAbilityDto {
   @IsString() @MaxLength(40) nombre: string;
   @IsOptional() @IsString() @MaxLength(300) descripcion?: string;
   @IsOptional() @IsIn(['especial', 'carta']) categoria?: AbilityCategory;
+  @IsOptional()
+  @IsArray()
+  @IsIn(['aliado', 'totem', 'arma', 'talisman', 'oro'], { each: true })
+  tipos?: string[];
 }
 
 @Injectable()
@@ -40,11 +44,14 @@ export class AbilitiesService implements OnModuleInit {
   async onModuleInit() {
     if (!env.mongodbUri) return;
     for (const ability of SEED_ABILITIES) {
-      // categoria va en $set para que instalaciones existentes reciban la reclasificación.
-      const { categoria, ...rest } = ability;
+      // categoria y tipos van en $set para que instalaciones existentes
+      // reciban reclasificaciones sin recrear el documento.
+      const { categoria, tipos, ...rest } = ability as (typeof SEED_ABILITIES)[number] & {
+        tipos?: string[];
+      };
       await this.model.updateOne(
         { code: ability.code },
-        { $setOnInsert: rest, $set: { categoria } },
+        { $setOnInsert: rest, $set: { categoria, tipos: tipos ?? [] } },
         { upsert: true },
       );
     }

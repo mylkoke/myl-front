@@ -116,6 +116,7 @@ export function CardEditorPage() {
     nombre: '',
     descripcion: '',
     categoria: 'especial' as AbilityCategory,
+    tipos: [] as CardType[],
   });
 
   const reload = async () => {
@@ -319,7 +320,7 @@ export function CardEditorPage() {
       await getServices().catalog.createAbility(abilityForm);
       await reload();
       setAbilityOpen(false);
-      setAbilityForm({ code: '', nombre: '', descripcion: '', categoria: 'especial' });
+      setAbilityForm({ code: '', nombre: '', descripcion: '', categoria: 'especial', tipos: [] });
     } catch (e) {
       setMessage(e instanceof Error ? e.message : 'Error creando la habilidad');
     }
@@ -633,7 +634,19 @@ export function CardEditorPage() {
               Tipo
               <select
                 value={form.tipo}
-                onChange={(e) => setForm((f) => ({ ...f, tipo: e.target.value as CardType }))}
+                onChange={(e) => {
+                  const tipo = e.target.value as CardType;
+                  // Al cambiar el tipo, se descartan las habilidades ya
+                  // seleccionadas que no aplican al tipo nuevo.
+                  setForm((f) => ({
+                    ...f,
+                    tipo,
+                    habilidadesEspeciales: f.habilidadesEspeciales.filter((code) => {
+                      const a = abilities.find((x) => x.code === code);
+                      return !a || a.tipos.length === 0 || a.tipos.includes(tipo);
+                    }),
+                  }));
+                }}
                 className={inputCls}
               >
                 {CARD_TYPES.map((t) => (
@@ -770,7 +783,13 @@ export function CardEditorPage() {
               habilidades de carta (mecánica propia): segmentos separados,
               ambas se guardan en form.habilidadesEspeciales */}
           {(['especial', 'carta'] as const).map((categoria) => {
-            const items = abilities.filter((a) => a.categoria === categoria);
+            // Solo las habilidades que aplican al tipo de carta seleccionado
+            // (tipos vacío = aplica a todos los tipos)
+            const items = abilities.filter(
+              (a) =>
+                a.categoria === categoria &&
+                (a.tipos.length === 0 || a.tipos.includes(form.tipo)),
+            );
             if (items.length === 0) return null;
             return (
               <div key={categoria}>
@@ -899,6 +918,35 @@ export function CardEditorPage() {
                 <option value="carta">Habilidad con mecánica (texto normal)</option>
               </select>
             </label>
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1.5">
+                Aplica a (vacío = todos los tipos)
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {CARD_TYPES.map((t) => {
+                  const active = abilityForm.tipos.includes(t);
+                  return (
+                    <button
+                      key={t}
+                      onClick={() =>
+                        setAbilityForm((f) => ({
+                          ...f,
+                          tipos: active ? f.tipos.filter((x) => x !== t) : [...f.tipos, t],
+                        }))
+                      }
+                      className={[
+                        'px-2.5 py-1.5 rounded-full text-xs font-medium border transition-all',
+                        active
+                          ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+                          : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500',
+                      ].join(' ')}
+                    >
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <Button
               variant="primary" fullWidth onClick={saveAbility}
               disabled={!abilityForm.code || !abilityForm.nombre}

@@ -69,6 +69,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Esta arma puede jugarse en la línea de apoyo como si fuera un tótem, sin necesidad de equiparse a un aliado.',
     implemented: true,
     categoria: 'especial',
+    tipos: ['arma'],
   },
   {
     code: 'defensor',
@@ -76,6 +77,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Este aliado no puede atacar; solo puede defender desde la línea de defensa.',
     implemented: true,
     categoria: 'especial',
+    tipos: ['aliado'],
   },
   {
     code: 'furia',
@@ -83,6 +85,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Este aliado puede atacar el mismo turno en que entra en juego, sin esperar a la siguiente Agrupación.',
     implemented: true,
     categoria: 'especial',
+    tipos: ['aliado'],
   },
   {
     code: 'indestructible',
@@ -90,6 +93,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Esta carta no va al Cementerio: los efectos que digan "Destruye" se anulan sobre ella, y en la Asignación de Daño sobrevive a la comparación de fuerzas aunque el aliado rival tenga Fuerza igual o mayor.',
     implemented: true,
     categoria: 'especial',
+    tipos: ['aliado', 'totem', 'arma'],
   },
   {
     code: 'indesterrable',
@@ -97,6 +101,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Mientras esté en el campo de batalla, ningún efecto puede enviar esta carta a la Zona de Destierro: los destierros con objetivo fallan al resolverse sobre ella y los destierros masivos la ignoran.',
     implemented: true,
     categoria: 'especial',
+    tipos: ['aliado', 'totem', 'arma'],
   },
   {
     code: 'instantaneo',
@@ -104,6 +109,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Este talismán puede jugarse fuera de la Vigilia y de la Guerra de Talismanes, en cualquier momento según indique su habilidad.',
     implemented: true,
     categoria: 'especial',
+    tipos: ['talisman'],
   },
   {
     code: 'invocacion_caudillo',
@@ -111,6 +117,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Una vez por turno, paga 3 Oros: busca en tu Mazo Castillo un Aliado de la misma raza con coste 4 o menos y juégalo sin pagar su coste.',
     implemented: true,
     categoria: 'carta',
+    tipos: ['aliado'],
   },
   {
     code: 'castigo_bloqueo',
@@ -118,6 +125,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Cada vez que este aliado ataque y sea bloqueado, el jugador defensor bota 6 cartas de su Mazo Castillo a su Cementerio.',
     implemented: true,
     categoria: 'carta',
+    tipos: ['aliado'],
   },
   {
     code: 'poder_temporal',
@@ -125,6 +133,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Paga 1 Oro para que el portador gane +2 de Fuerza hasta la Fase Final. No acumulable.',
     implemented: true,
     categoria: 'carta',
+    tipos: ['arma'],
   },
   {
     code: 'fuerza_inmutable',
@@ -132,6 +141,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Mientras esta carta esté en juego, los Aliados oponentes no pueden modificar su Fuerza: sus bonos de armas y efectos temporales quedan sin efecto y pelean con su Fuerza impresa.',
     implemented: true,
     categoria: 'carta',
+    tipos: ['totem', 'aliado'],
   },
   {
     code: 'unica',
@@ -139,6 +149,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Restricción de construcción de mazo: solo puedes incluir 1 copia de esta carta en todo tu Castillo (la regla general permite hasta 3 copias por mazo de 50).',
     implemented: true,
     categoria: 'especial',
+    tipos: ['aliado', 'totem', 'arma', 'talisman', 'oro'],
   },
   {
     code: 'solo_desde_mano',
@@ -146,6 +157,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Restricción: esta carta solo puede ser jugada desde la mano de su propietario. No puede entrar en juego por efectos ni habilidades, ni usarse como oro inicial.',
     implemented: true,
     categoria: 'carta',
+    tipos: ['aliado', 'totem', 'arma', 'talisman', 'oro'],
   },
   {
     code: 'imbloqueable',
@@ -153,6 +165,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Cuando este aliado ataca, el defensor no puede declararle bloqueador: el daño va directo al Mazo Castillo (la Guerra de Talismanes ocurre igual).',
     implemented: true,
     categoria: 'especial',
+    tipos: ['aliado'],
   },
   {
     code: 'inmunidad_talismanes',
@@ -160,6 +173,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Los talismanes no tienen ningún efecto sobre esta carta: los efectos de talismán con objetivo fallan sobre ella y los masivos la ignoran (p.ej. "Destruye un aliado en juego" no la destruye).',
     implemented: true,
     categoria: 'especial',
+    tipos: ['aliado', 'totem', 'arma'],
   },
   {
     code: 'patriotas_no_anulables',
@@ -167,6 +181,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Mientras esta carta esté en juego, tus Aliados Patriota no pueden ser anulados: los efectos "Anula…" con objetivo fallan sobre ellos y las anulaciones masivas los ignoran.',
     implemented: true,
     categoria: 'carta',
+    tipos: ['aliado'],
   },
   {
     code: 'relampago',
@@ -174,6 +189,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Esta carta puede jugarse en cualquier momento en que por regla podría jugarse un Talismán: durante el turno rival, como bloqueador sorpresa ante un ataque declarado, o en la Fase Final del oponente — pagando su Coste normal.',
     implemented: true,
     categoria: 'especial',
+    tipos: ['aliado', 'arma', 'totem'],
   },
   {
     code: 'agrupar_fase_final',
@@ -181,6 +197,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Al comienzo de cada Fase Final (de cualquier jugador), agrupa todas las cartas que controle el propietario de esta carta: sus oros pagados vuelven a la reserva y sus atacantes regresan enderezados a la defensa.',
     implemented: true,
     categoria: 'carta',
+    tipos: ['aliado'],
   },
   {
     code: 'botar3_destruye',
@@ -188,6 +205,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Puedes botar 3 cartas de tu Mazo Castillo al Cementerio para destruir un Aliado objetivo (falla contra Indestructible y "No sale del juego").',
     implemented: true,
     categoria: 'carta',
+    tipos: ['aliado'],
   },
   {
     code: 'inanulable',
@@ -195,6 +213,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Esta carta no puede ser anulada por ninguna carta: toda anulación falla sobre ella.',
     implemented: true,
     categoria: 'carta',
+    tipos: ['aliado', 'totem', 'arma', 'talisman'],
   },
   {
     code: 'no_sale_del_juego',
@@ -202,6 +221,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Esta carta no puede salir del juego por ningún medio: destrucción, remoción, destierro o retorno fallan sobre ella mientras esté en el campo.',
     implemented: true,
     categoria: 'carta',
+    tipos: ['aliado', 'totem', 'arma'],
   },
   {
     code: 'barajar_mano_roba8',
@@ -209,6 +229,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Cuando esta carta entra en juego, puedes barajar tu Mano en tu Mazo Castillo (el mazo se re-aleatoriza); si lo haces, robas 8 cartas nuevas.',
     implemented: true,
     categoria: 'carta',
+    tipos: ['aliado'],
   },
   {
     code: 'fuerza1_no_caudillos',
@@ -216,6 +237,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Mientras esta carta esté en el tablero, todos los Aliados que no sean de raza Caudillo tienen Fuerza 1 (fija, ignora bonos). Afecta a ambos jugadores.',
     implemented: true,
     categoria: 'carta',
+    tipos: ['aliado'],
   },
   {
     code: 'jugar_desde_cementerio',
@@ -223,6 +245,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Puedes jugar esta carta desde tu Cementerio o tu Destierro como si estuviera en tu Mano, pagando su Coste normal. Las zonas con cartas jugables brillan doradas.',
     implemented: true,
     categoria: 'carta',
+    tipos: ['aliado'],
   },
   {
     code: 'bonus_patriotas',
@@ -230,6 +253,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Mientras esta carta esté en el tablero (línea de ataque o defensa), TODOS los Aliados de raza Patriota — de ambos jugadores, incluida ella misma — ganan +1 a la Fuerza.',
     implemented: true,
     categoria: 'carta',
+    tipos: ['aliado'],
   },
   {
     code: 'talisman_reciclado',
@@ -237,6 +261,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Una vez por turno, puedes jugar un Talismán desde tu Cementerio o Destierro reduciendo su Coste en 3 (mínimo 0). Tras resolverse, ese talismán se remueve del juego.',
     implemented: true,
     categoria: 'carta',
+    tipos: ['aliado'],
   },
   {
     code: 'orbe',
@@ -244,6 +269,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Restricción de construcción de mazo (la más estricta): solo puedes tener UNA carta con la habilidad Orbe en todo tu Mazo Castillo, sin importar su nombre — prohíbe la segunda copia y cualquier otra carta Orbe distinta.',
     implemented: true,
     categoria: 'especial',
+    tipos: ['aliado', 'totem', 'arma', 'talisman', 'oro'],
   },
   {
     code: 'anular_respuesta',
@@ -251,6 +277,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Talismán de respuesta: durante la ventana de 10 s tras jugarse un Aliado o Talismán rival, puedes jugarlo para ANULAR esa carta — la carta anulada se remueve del juego (zona R) y robas tantas cartas como su Coste. Respeta Inmunidad: Talismanes y la protección de Patriotas.',
     implemented: true,
     categoria: 'carta',
+    tipos: ['talisman'],
   },
   {
     code: 'oro_inicial',
@@ -258,6 +285,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Keyword de preparación: la regla general exige que el oro inicial de la partida sea un Oro básico (sin habilidades); una carta con Oro Inicial también puede colocarse como tu primer oro del juego.',
     implemented: true,
     categoria: 'especial',
+    tipos: ['oro'],
   },
   {
     code: 'oro_robar_descartar',
@@ -265,6 +293,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Una vez por turno, si controlas al menos un Aliado Patriota, puedes pagar este Oro (moverlo a tu Zona de Oro Pagado) para robar 1 carta de tu Mazo Castillo y luego descartar obligatoriamente 1 carta de tu mano. Activable en cualquier fase, en tu turno o en el del oponente.',
     implemented: true,
     categoria: 'carta',
+    tipos: ['oro'],
   },
   {
     code: 'debilitar_aliado',
@@ -272,6 +301,7 @@ export const SEED_ABILITIES = [
     descripcion: 'En tu Vigilia, puedes pagar 1 Oro para que un Aliado objetivo en juego tenga Fuerza 0 hasta la Fase Final. Repetible mientras tengas oro.',
     implemented: true,
     categoria: 'carta',
+    tipos: ['aliado'],
   },
   {
     code: 'oro_talismanes',
@@ -279,5 +309,6 @@ export const SEED_ABILITIES = [
     descripcion: 'Puedes pagar este Oro (moverlo a tu Zona de Oro Pagado) para generar 2 Oros que solo pueden usarse para jugar Talismanes. Activable durante tu turno o el del oponente; los Oros generados expiran al final del turno.',
     implemented: true,
     categoria: 'carta',
+    tipos: ['oro'],
   },
 ];

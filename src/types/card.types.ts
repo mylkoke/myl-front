@@ -27,6 +27,8 @@ export interface SpecialAbilityInfo {
   descripcion: string;
   implemented: boolean;
   categoria: AbilityCategory;
+  /** Tipos de carta a los que aplica (vacío = todos). */
+  tipos: CardType[];
 }
 
 export type CardRarity = 'comun' | 'infrecuente' | 'raro' | 'ultra raro';

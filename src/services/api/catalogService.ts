@@ -91,6 +91,7 @@ interface ServerAbility {
   descripcion: string;
   implemented: boolean;
   categoria?: 'especial' | 'carta';
+  tipos?: Card['tipo'][];
 }
 
 interface UploadSignature {
@@ -182,6 +183,7 @@ export const apiCatalogService = {
       descripcion: a.descripcion,
       implemented: a.implemented,
       categoria: a.categoria ?? 'especial',
+      tipos: a.tipos ?? [],
     }));
   },
 
@@ -190,6 +192,7 @@ export const apiCatalogService = {
     nombre: string;
     descripcion: string;
     categoria: 'especial' | 'carta';
+    tipos: Card['tipo'][];
   }): Promise<SpecialAbilityInfo> {
     const a = await apiFetch<ServerAbility>('/api/special-abilities', {
       method: 'POST',
@@ -202,6 +205,7 @@ export const apiCatalogService = {
       descripcion: a.descripcion,
       implemented: a.implemented,
       categoria: a.categoria ?? 'especial',
+      tipos: a.tipos ?? [],
     };
   },
 };

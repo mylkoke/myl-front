@@ -31,6 +31,10 @@ export class SpecialAbility {
 
   @Prop({ type: String, enum: ['especial', 'carta'], default: 'especial' })
   categoria: AbilityCategory;
+
+  /** Tipos de carta a los que aplica (vacío = todos los tipos). */
+  @Prop({ type: [String], default: [] })
+  tipos: string[];
 }
 
 export type SpecialAbilityDocument = HydratedDocument<SpecialAbility>;
