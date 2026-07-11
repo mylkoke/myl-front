@@ -208,6 +208,14 @@ export const SEED_ABILITIES = [
     tipos: ['aliado'],
   },
   {
+    code: 'intercambio_control',
+    nombre: 'Intercambio de control',
+    descripcion: 'Cuando esta carta entra en juego, puedes intercambiar su control por el de otra carta en juego que no sea Oro (Aliado, Tótem o Arma en mesa del rival). El intercambio dura el resto de la partida: cada carta actúa como si su propietario fuera quien la tiene en su lado del tablero.',
+    implemented: true,
+    categoria: 'carta',
+    tipos: ['aliado'],
+  },
+  {
     code: 'inanulable',
     nombre: 'Inanulable',
     descripcion: 'Esta carta no puede ser anulada por ninguna carta: toda anulación falla sobre ella.',

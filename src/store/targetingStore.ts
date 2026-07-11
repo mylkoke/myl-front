@@ -11,17 +11,23 @@ interface TargetingState {
   weaken: { sourceInstanceId: string; playerId: PlayerId } | null;
   /** Active "destroy ally" targeting ('botar3_destruye'). */
   destroy: { sourceInstanceId: string; playerId: PlayerId } | null;
+  /** Active "swap control" targeting ('intercambio_control'): rival non-gold cards. */
+  swap: { sourceInstanceId: string; playerId: PlayerId } | null;
   startWeaken: (sourceInstanceId: string, playerId: PlayerId) => void;
   startDestroy: (sourceInstanceId: string, playerId: PlayerId) => void;
+  startSwap: (sourceInstanceId: string, playerId: PlayerId) => void;
   cancel: () => void;
 }
 
 export const useTargetingStore = create<TargetingState>((set) => ({
   weaken: null,
   destroy: null,
+  swap: null,
   startWeaken: (sourceInstanceId, playerId) =>
-    set({ weaken: { sourceInstanceId, playerId }, destroy: null }),
+    set({ weaken: { sourceInstanceId, playerId }, destroy: null, swap: null }),
   startDestroy: (sourceInstanceId, playerId) =>
-    set({ destroy: { sourceInstanceId, playerId }, weaken: null }),
-  cancel: () => set({ weaken: null, destroy: null }),
+    set({ destroy: { sourceInstanceId, playerId }, weaken: null, swap: null }),
+  startSwap: (sourceInstanceId, playerId) =>
+    set({ swap: { sourceInstanceId, playerId }, weaken: null, destroy: null }),
+  cancel: () => set({ weaken: null, destroy: null, swap: null }),
 }));

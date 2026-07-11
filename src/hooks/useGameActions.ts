@@ -26,6 +26,8 @@ export function useGameActions() {
   const discardFromHand = useGameStore((s) => s.discardFromHand);
   const respondWithAnnul = useGameStore((s) => s.respondWithAnnul);
   const resolveShuffleChoice = useGameStore((s) => s.resolveShuffleChoice);
+  const resolveSwapChoice = useGameStore((s) => s.resolveSwapChoice);
+  const swapControl = useGameStore((s) => s.swapControl);
   const passResponse = useGameStore((s) => s.passResponse);
   const closeResponseWindow = useGameStore((s) => s.closeResponseWindow);
   const weakenAlly = useGameStore((s) => s.weakenAlly);
@@ -104,6 +106,9 @@ export function useGameActions() {
     // Ventana de respuesta: el respondedor actúa fuera de su turno.
     respondWithAnnul: ownerGated<[string]>(respondWithAnnul),
     resolveShuffleChoice: ownerGated<[boolean]>(resolveShuffleChoice),
+    // 'intercambio_control' puede resolverse fuera de turno (Relámpago).
+    resolveSwapChoice: ownerGated<[boolean]>(resolveSwapChoice),
+    swapControl: ownerGated<[string, string, PlayerId]>(swapControl),
     passResponse: ownerGated<[]>(passResponse),
     closeResponseWindow: () => {
       closeResponseWindow();

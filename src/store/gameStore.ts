@@ -25,6 +25,7 @@ import {
   RESPONSE_WINDOW_MS,
   hasDrawDiscardGold,
   cannotLeavePlay,
+  hasControlSwap,
   hasFinalPhaseRegroup,
   hasImbloqueable,
   hasMillDestroy,
@@ -124,6 +125,7 @@ export function buildInitialState(
     isBoardRotating: false,
     pendingDiscard: null,
     pendingShuffleChoice: null,
+    pendingSwapChoice: null,
     responseWindow: null,
     fxLightning: null,
     gameLog: [
@@ -234,6 +236,18 @@ interface GameActions {
    * en el Mazo Castillo (orden aleatorio) y roba 8 cartas nuevas.
    */
   resolveShuffleChoice: (accept: boolean, playerId: PlayerId) => void;
+  /** 'intercambio_control': cierra la decisión (la selección la abre la UI). */
+  resolveSwapChoice: (accept: boolean, playerId: PlayerId) => void;
+  /**
+   * 'intercambio_control': intercambia el control de la carta origen por el
+   * de una carta rival no-oro en juego, por el resto de la partida.
+   */
+  swapControl: (
+    sourceInstanceId: string,
+    targetInstanceId: string,
+    targetOwnerId: PlayerId,
+    playerId: PlayerId,
+  ) => void;
   /**
    * 'anular_respuesta': durante la ventana de respuesta, juega el talismán
    * de anulación — la carta jugada se remueve del juego y el respondedor
@@ -437,6 +451,18 @@ export const useGameStore = create<GameStore>()(
         // su mano en el Castillo y roba 8.
         if (!get().isGameOver && card.tipo === 'aliado' && hasShuffleDraw(card)) {
           set({ pendingShuffleChoice: { playerId, cardName: card.nombre } });
+        }
+
+        // 'intercambio_control': al entrar en juego, su dueño decide si
+        // intercambia su control con una carta rival no-oro.
+        if (!get().isGameOver && card.tipo === 'aliado' && hasControlSwap(card)) {
+          set({
+            pendingSwapChoice: {
+              playerId,
+              cardInstanceId: card.instanceId,
+              cardName: card.nombre,
+            },
+          });
         }
 
         // FX de Relámpago: la carta se jugó a velocidad de respuesta (fuera
@@ -1459,6 +1485,98 @@ export const useGameStore = create<GameStore>()(
         );
         const { isOver, winnerId } = checkGameOver(get().players);
         if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
+      },
+
+      resolveSwapChoice: (accept, playerId) => {
+        const { pendingSwapChoice } = get();
+        if (!pendingSwapChoice || pendingSwapChoice.playerId !== playerId) return;
+        set({ pendingSwapChoice: null });
+        get().addLog(
+          accept
+            ? `${get().players[playerId].name} elige una carta rival para intercambiar el control con ${pendingSwapChoice.cardName}…`
+            : `${get().players[playerId].name} no usa el efecto de ${pendingSwapChoice.cardName}.`,
+          'system'
+        );
+      },
+
+      swapControl: (sourceInstanceId, targetInstanceId, targetOwnerId, playerId) => {
+        const { players, isGameOver } = get();
+        if (isGameOver || targetOwnerId === playerId) return;
+        const owner = players[playerId];
+        const rival = players[targetOwnerId];
+
+        const source = [...owner.defenseField, ...owner.attackField].find(
+          (c) => c.instanceId === sourceInstanceId
+        );
+        if (!source || !hasControlSwap(source)) return;
+
+        const target =
+          [...rival.defenseField, ...rival.attackField, ...rival.supportField].find(
+            (c) => c.instanceId === targetInstanceId && c.tipo !== 'oro'
+          ) ?? null;
+        if (!target) return;
+
+        set((s) => {
+          const me = s.players[playerId];
+          const op = s.players[targetOwnerId];
+
+          // Limpia estados por-instancia asociados a ambas cartas en sus
+          // dueños originales (bonos temporales, debilitaciones, usos).
+          const strip = (p: PlayerState, ids: string[]) => ({
+            weakenedAllies: p.weakenedAllies.filter((i) => !ids.includes(i)),
+            weaponTempBonuses: Object.fromEntries(
+              Object.entries(p.weaponTempBonuses).filter(([k]) => !ids.includes(k))
+            ),
+            allyAbilityUsedThisTurn: p.allyAbilityUsedThisTurn.filter((i) => !ids.includes(i)),
+          });
+
+          // El arma equipada acompaña a su aliado al cambiar de bando.
+          const sourceWeapon = me.equippedWeapons[sourceInstanceId];
+          const targetWeapon = op.equippedWeapons[targetInstanceId];
+          const myWeapons = { ...me.equippedWeapons };
+          delete myWeapons[sourceInstanceId];
+          const opWeapons = { ...op.equippedWeapons };
+          delete opWeapons[targetInstanceId];
+          if (targetWeapon) myWeapons[targetInstanceId] = targetWeapon;
+          if (sourceWeapon) opWeapons[sourceInstanceId] = sourceWeapon;
+
+          return {
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...me,
+                ...strip(me, [sourceInstanceId, targetInstanceId]),
+                defenseField: [
+                  ...me.defenseField.filter((c) => c.instanceId !== sourceInstanceId),
+                  // El aliado rival llega a mi línea de defensa
+                  ...(target.tipo === 'aliado' ? [target] : []),
+                ],
+                attackField: me.attackField.filter((c) => c.instanceId !== sourceInstanceId),
+                supportField: [
+                  ...me.supportField,
+                  ...(target.tipo !== 'aliado' ? [target] : []),
+                ],
+                equippedWeapons: myWeapons,
+              },
+              [targetOwnerId]: {
+                ...op,
+                ...strip(op, [sourceInstanceId, targetInstanceId]),
+                defenseField: [
+                  ...op.defenseField.filter((c) => c.instanceId !== targetInstanceId),
+                  // La carta origen (aliado) pasa a la defensa del rival
+                  source,
+                ],
+                attackField: op.attackField.filter((c) => c.instanceId !== targetInstanceId),
+                supportField: op.supportField.filter((c) => c.instanceId !== targetInstanceId),
+                equippedWeapons: opWeapons,
+              },
+            },
+          };
+        });
+        get().addLog(
+          `${source.nombre}: ${owner.name} intercambia su control por ${target.nombre} (por el resto de la partida).`,
+          'combat'
+        );
       },
 
       resolveShuffleChoice: (accept, playerId) => {

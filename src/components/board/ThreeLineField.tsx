@@ -9,6 +9,7 @@ import { useGameActions } from '@/hooks/useGameActions';
 import { getLineCardSize } from '@/utils/cardSize';
 import { effectiveForce, hasMachinery } from '@/utils/gameRules';
 import { useDropZone } from '@/utils/dragManager';
+import { useTargetingStore } from '@/store/targetingStore';
 import { Shield, Sword, Layers } from 'lucide-react';
 
 interface ThreeLineFieldProps {
@@ -73,6 +74,29 @@ export function ThreeLineField({ playerId, isOpponent = false }: ThreeLineFieldP
   const attackField    = useGameStore((s) => s.players[playerId].attackField);
   const supportField   = useGameStore((s) => s.players[playerId].supportField);
   const boardPlayers = useGameStore((s) => s.players);
+  // 'intercambio_control': cartas no-oro de ESTE lado elegibles si el que
+  // activa es el rival (marco dorado + clic para intercambiar).
+  const swapTargetingRaw = useTargetingStore((s) => s.swap);
+  const swapTargeting =
+    swapTargetingRaw && swapTargetingRaw.playerId !== playerId ? swapTargetingRaw : null;
+  const cancelTargeting = useTargetingStore((s) => s.cancel);
+  const { swapControl } = useGameActions();
+
+  const swapWrap = (card: CardInPlay, node: React.ReactNode) =>
+    swapTargeting ? (
+      <div
+        className="relative cursor-pointer"
+        onClick={() => {
+          swapControl(swapTargeting.sourceInstanceId, card.instanceId, playerId, swapTargeting.playerId);
+          cancelTargeting();
+        }}
+      >
+        <div className="absolute -inset-1 rounded-xl ring-2 ring-yellow-400 animate-pulse pointer-events-none z-30" />
+        <div className="pointer-events-none">{node}</div>
+      </div>
+    ) : (
+      node
+    );
   const equippedWeapons = useGameStore((s) => s.players[playerId].equippedWeapons);
   const turn           = useGameStore((s) => s.turn);
   const player         = useGameStore((s) => s.players[playerId]);
@@ -133,19 +157,24 @@ export function ThreeLineField({ playerId, isOpponent = false }: ThreeLineFieldP
           disabled={!isMyTurn}
           renderCard={(card) => (
             <div key={card.instanceId} data-fx-instance={card.instanceId} className="relative card-enter">
-              <CardView
-                card={{
-                  // Fuerza efectiva: bonos, 'fuerza_inmutable' y 'debilitar_aliado'
-                  ...card,
-                  fuerza: effectiveForce(card, boardPlayers[playerId], boardPlayers),
-                }}
-                onClick={() => setDetailCard(card)}
-                isOpponent={isOpponent}
-                size={attackSize}
-              />
-              <div className="absolute -top-1 left-1/2 -translate-x-1/2 bg-red-600 text-white text-[7px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap">
-                ⚔ atacando
-              </div>
+              {swapWrap(
+                card,
+                <>
+                  <CardView
+                    card={{
+                      // Fuerza efectiva: bonos, 'fuerza_inmutable' y 'debilitar_aliado'
+                      ...card,
+                      fuerza: effectiveForce(card, boardPlayers[playerId], boardPlayers),
+                    }}
+                    onClick={() => setDetailCard(card)}
+                    isOpponent={isOpponent}
+                    size={attackSize}
+                  />
+                  <div className="absolute -top-1 left-1/2 -translate-x-1/2 bg-red-600 text-white text-[7px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                    ⚔ atacando
+                  </div>
+                </>,
+              )}
             </div>
           )}
         />
@@ -189,12 +218,15 @@ export function ThreeLineField({ playerId, isOpponent = false }: ThreeLineFieldP
           disabled={!isMyTurn}
           renderCard={(card) => (
             <div key={card.instanceId} className="card-enter">
-              <CardView
-                card={card}
-                onClick={() => setDetailCard(card)}
-                size={supportSize}
-                isOpponent={isOpponent}
-              />
+              {swapWrap(
+                card,
+                <CardView
+                  card={card}
+                  onClick={() => setDetailCard(card)}
+                  size={supportSize}
+                  isOpponent={isOpponent}
+                />,
+              )}
             </div>
           )}
         />

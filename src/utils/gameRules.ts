@@ -246,6 +246,16 @@ export function hasMillDestroy(card: Card): boolean {
 }
 
 /**
+ * 'intercambio_control' (Arturo Prat SP): when this card enters play, its
+ * owner MAY exchange its control with any non-gold rival card in play (ally,
+ * totem or machinery weapon on the board). The exchange lasts for the rest
+ * of the game: each card acts as if owned by the player whose side it is on.
+ */
+export function hasControlSwap(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('intercambio_control') ?? false;
+}
+
+/**
  * 'inanulable' (Manuel Rodríguez): this card cannot be annulled by ANY card.
  */
 export function hasInanulable(card: Card): boolean {

@@ -132,6 +132,12 @@ export interface GameState {
    * Se sincroniza online.
    */
   pendingShuffleChoice: { playerId: PlayerId; cardName: string } | null;
+  /**
+   * Decisión pendiente de 'intercambio_control' (Arturo Prat SP): al entrar
+   * en juego, su dueño puede intercambiar su control con una carta rival
+   * no-oro por el resto de la partida. Se sincroniza online.
+   */
+  pendingSwapChoice: { playerId: PlayerId; cardInstanceId: string; cardName: string } | null;
   responseWindow: {
     /** Carta recién jugada (ya en su zona) que puede ser anulada */
     cardInstanceId: string;

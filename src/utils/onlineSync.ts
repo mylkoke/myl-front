@@ -17,6 +17,7 @@ export function snapshotGameState(): GameState {
     isBoardRotating: false,
     pendingDiscard: s.pendingDiscard,
     pendingShuffleChoice: s.pendingShuffleChoice,
+    pendingSwapChoice: s.pendingSwapChoice,
     responseWindow: s.responseWindow,
     fxLightning: s.fxLightning,
   };

@@ -35,7 +35,7 @@ interface AllySlotProps {
 export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'md' }: AllySlotProps) {
   const [detailCard, setDetailCard] = useState<CardInPlay | null>(null);
   const [deckSearchOpen, setDeckSearchOpen] = useState(false);
-  const { equipWeapon, summonCaudilloFromDeck, weakenAlly, millDestroyAlly, playRecycledTalisman } = useGameActions();
+  const { equipWeapon, summonCaudilloFromDeck, weakenAlly, millDestroyAlly, swapControl, playRecycledTalisman } = useGameActions();
   const [recycleOpen, setRecycleOpen] = useState(false);
   const turn   = useGameStore((s) => s.turn);
   const combat = useGameStore((s) => s.combat);
@@ -53,8 +53,12 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
   // este aliado es elegible y se ilumina.
   const weakenTargeting = useTargetingStore((s) => s.weaken);
   const destroyTargeting = useTargetingStore((s) => s.destroy);
+  // 'intercambio_control': solo las cartas del RIVAL del que activa son elegibles.
+  const swapTargetingRaw = useTargetingStore((s) => s.swap);
+  const swapTargeting =
+    swapTargetingRaw && swapTargetingRaw.playerId !== playerId ? swapTargetingRaw : null;
   const cancelTargeting = useTargetingStore((s) => s.cancel);
-  const anyTargeting = weakenTargeting ?? destroyTargeting;
+  const anyTargeting = weakenTargeting ?? destroyTargeting ?? swapTargeting;
 
   const isMyTurn = turn.currentPlayer === playerId && !isOpponent;
 
@@ -143,9 +147,14 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
 
         {/* Ally card */}
         <div className="relative z-10">
-          {/* Marco pulsante: aliado elegible mientras se elige objetivo */}
+          {/* Marco pulsante: aliado elegible mientras se elige objetivo
+              (rojo = debilitar/destruir; dorado = intercambio de control) */}
           {anyTargeting && (
-            <div className="absolute -inset-1 rounded-xl ring-2 ring-red-400 animate-pulse pointer-events-none z-30" />
+            <div
+              className={`absolute -inset-1 rounded-xl ring-2 animate-pulse pointer-events-none z-30 ${
+                swapTargeting ? 'ring-yellow-400' : 'ring-red-400'
+              }`}
+            />
           )}
           <CardView
             card={displayAlly}
@@ -167,6 +176,16 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
                       ally.instanceId,
                       playerId,
                       destroyTargeting.playerId,
+                    );
+                    cancelTargeting();
+                  }
+                : swapTargeting
+                ? () => {
+                    swapControl(
+                      swapTargeting.sourceInstanceId,
+                      ally.instanceId,
+                      playerId,
+                      swapTargeting.playerId,
                     );
                     cancelTargeting();
                   }
