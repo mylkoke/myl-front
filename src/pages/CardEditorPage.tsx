@@ -356,14 +356,28 @@ export function CardEditorPage() {
     });
   }, [catalog, search, sortBy]);
 
-  // Razas existentes en el catálogo → chips seleccionables en el formulario.
+  // Razas: las existentes en el catálogo + las agregadas con el botón "+"
+  // en esta sesión → chips seleccionables en el formulario.
+  const [customRazas, setCustomRazas] = useState<string[]>([]);
+  const [razaInput, setRazaInput] = useState('');
   const razas = useMemo(
     () =>
-      [...new Set(catalog.map((c) => c.raza).filter((r): r is string => !!r))].sort((a, b) =>
-        a.localeCompare(b),
-      ),
-    [catalog],
+      [
+        ...new Set([
+          ...catalog.map((c) => c.raza).filter((r): r is string => !!r),
+          ...customRazas,
+        ]),
+      ].sort((a, b) => a.localeCompare(b)),
+    [catalog, customRazas],
   );
+
+  const addRaza = () => {
+    const r = razaInput.trim();
+    if (!r) return;
+    setCustomRazas((prev) => (prev.includes(r) ? prev : [...prev, r]));
+    setForm((f) => ({ ...f, raza: r }));
+    setRazaInput('');
+  };
 
   if (loading) {
     return (
@@ -665,13 +679,26 @@ export function CardEditorPage() {
                     </button>
                   );
                 })}
-                <input
-                  type="text"
-                  placeholder="…u otra raza"
-                  value={razas.includes(form.raza) ? '' : form.raza}
-                  onChange={(e) => setForm((f) => ({ ...f, raza: e.target.value }))}
-                  className={`${inputCls} !w-32`}
-                />
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    placeholder="Nueva raza…"
+                    value={razaInput}
+                    onChange={(e) => setRazaInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') addRaza();
+                    }}
+                    className={`${inputCls} !w-32`}
+                  />
+                  <button
+                    onClick={addRaza}
+                    disabled={!razaInput.trim()}
+                    title="Agregar raza"
+                    className="p-2 rounded-md bg-slate-800 border border-slate-700 text-slate-300 hover:border-amber-400 hover:text-amber-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  >
+                    <Plus size={14} />
+                  </button>
+                </div>
               </div>
             </div>
           )}
