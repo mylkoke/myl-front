@@ -27,6 +27,8 @@ export function useGameActions() {
   const passResponse = useGameStore((s) => s.passResponse);
   const closeResponseWindow = useGameStore((s) => s.closeResponseWindow);
   const weakenAlly = useGameStore((s) => s.weakenAlly);
+  const playFromZone = useGameStore((s) => s.playFromZone);
+  const playRecycledTalisman = useGameStore((s) => s.playRecycledTalisman);
 
   /** Acciones de oros activables en cualquier turno: en online solo se exige
    *  ser el dueño del asiento (no que sea tu turno). */
@@ -102,6 +104,8 @@ export function useGameActions() {
       pushCurrentState();
     },
     weakenAlly:    guarded(weakenAlly),
+    playFromZone:  guarded(playFromZone),
+    playRecycledTalisman: guarded(playRecycledTalisman),
     regroupGold:   guarded(regroupGold),
     regroupAllies: guarded(regroupAllies),
     selectCard,

@@ -12,10 +12,12 @@ import { DeckSearchModal } from './DeckSearchModal';
 import {
   effectiveForce,
   hasCaudilloSummon,
+  hasTalismanRecycle,
   hasWeakenAbility,
   isSummonableByCaudillo,
   strengthLockedFor,
   CAUDILLO_SUMMON_GOLD_COST,
+  TALISMAN_RECYCLE_DISCOUNT,
   WEAKEN_GOLD_COST,
 } from '@/utils/gameRules';
 import { useTargetingStore } from '@/store/targetingStore';
@@ -31,7 +33,8 @@ interface AllySlotProps {
 export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'md' }: AllySlotProps) {
   const [detailCard, setDetailCard] = useState<CardInPlay | null>(null);
   const [deckSearchOpen, setDeckSearchOpen] = useState(false);
-  const { equipWeapon, summonCaudilloFromDeck, weakenAlly } = useGameActions();
+  const { equipWeapon, summonCaudilloFromDeck, weakenAlly, playRecycledTalisman } = useGameActions();
+  const [recycleOpen, setRecycleOpen] = useState(false);
   const turn   = useGameStore((s) => s.turn);
   const combat = useGameStore((s) => s.combat);
   const player = useGameStore((s) => s.players[playerId]);
@@ -66,6 +69,23 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
     !combat &&
     turn.phase === 'vigilia' &&
     player.goldCount >= WEAKEN_GOLD_COST;
+
+  // 'talisman_reciclado': 1 vez por turno, juega un talismán desde tu
+  // Cementerio o Destierro con coste −3; luego se remueve del juego.
+  const allyHasRecycleAbility = hasTalismanRecycle(ally);
+  const recyclePool = [...player.graveyard, ...player.exile];
+  const canUseRecycleAbility =
+    isMyTurn &&
+    allyHasRecycleAbility &&
+    !combat &&
+    turn.phase === 'vigilia' &&
+    !player.allyAbilityUsedThisTurn.includes(ally.instanceId) &&
+    recyclePool.some(
+      (c) =>
+        c.tipo === 'talisman' &&
+        Math.max(0, c.coste - TALISMAN_RECYCLE_DISCOUNT) <=
+          player.goldCount + player.talismanGold,
+    );
 
   // 'invocacion_caudillo': el aliado puede pagar 3 oros para invocar desde el
   // Mazo Castillo un aliado de su misma raza con coste ≤ 4, 1 vez por turno.
@@ -186,20 +206,26 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
                 // Entra en modo selección: los aliados del tablero se iluminan.
                 useTargetingStore.getState().startWeaken(ally.instanceId, playerId);
               }
+            : detailCard && detailCard.instanceId === ally.instanceId && allyHasRecycleAbility && !isOpponent
+            ? () => { setDetailCard(null); setRecycleOpen(true); }
             : undefined
         }
         canUseSpecialAbility={
           detailCard?.instanceId === ally.instanceId
             ? allyHasSummonAbility
               ? canUseSummonAbility
-              : canUseWeakenAbility
+              : allyHasWeakenAbility
+              ? canUseWeakenAbility
+              : canUseRecycleAbility
             : canUseWeaponAbility
         }
         specialAbilityLabel={
           detailCard?.instanceId === ally.instanceId
             ? allyHasSummonAbility
               ? `Invocar Caudillo (−${CAUDILLO_SUMMON_GOLD_COST} Oros)`
-              : `Debilitar: Fuerza 0 hasta la Fase Final (−${WEAKEN_GOLD_COST} Oro)`
+              : allyHasWeakenAbility
+              ? `Debilitar: Fuerza 0 hasta la Fase Final (−${WEAKEN_GOLD_COST} Oro)`
+              : `Talismán del Cementerio/Destierro (coste −${TALISMAN_RECYCLE_DISCOUNT})`
             : undefined
         }
       />
@@ -213,6 +239,22 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
         deck={player.deck}
         isEligible={(c) => isSummonableByCaudillo(c, ally)}
         onPlay={(deckIndex) => summonCaudilloFromDeck(ally.instanceId, deckIndex, playerId)}
+      />
+
+      {/* 'talisman_reciclado': talismanes del Cementerio + Destierro con coste −3 */}
+      <DeckSearchModal
+        isOpen={recycleOpen}
+        onClose={() => setRecycleOpen(false)}
+        title={`Cementerio y Destierro — talismanes de ${ally.nombre}`}
+        deck={recyclePool}
+        isEligible={(c) =>
+          c.tipo === 'talisman' &&
+          Math.max(0, c.coste - TALISMAN_RECYCLE_DISCOUNT) <=
+            player.goldCount + player.talismanGold
+        }
+        onPlay={(index) =>
+          playRecycledTalisman(ally.instanceId, recyclePool[index].instanceId, playerId)
+        }
       />
     </>
   );

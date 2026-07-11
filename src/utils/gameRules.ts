@@ -242,10 +242,55 @@ export function hasWeakenAbility(card: Card): boolean {
 }
 
 /**
+ * 'jugar_desde_cementerio' (Bernardo O'Higgins): this card can be played from
+ * its owner's Cementerio or Destierro as if it were in their hand, paying its
+ * normal cost. The zones holding a playable card glow golden in the UI.
+ */
+export function hasPlayFromGraveyard(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('jugar_desde_cementerio') ?? false;
+}
+
+/**
+ * 'bonus_patriotas' (Bernardo O'Higgins): while this card is on the board
+ * (defense or attack line), ALL Patriota allies — both players', including
+ * itself — gain +1 Fuerza. Stacks per card with the ability in play.
+ */
+export function hasPatriotaBuff(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('bonus_patriotas') ?? false;
+}
+
+/** Total +1s a Patriota ally receives from 'bonus_patriotas' cards in play. */
+export function patriotaBonus(
+  ally: CardInPlay,
+  players: Record<PlayerId, PlayerState>,
+): number {
+  if (ally.tipo !== 'aliado' || ally.raza !== 'Patriota') return 0;
+  let bonus = 0;
+  for (const p of Object.values(players)) {
+    for (const c of [...p.defenseField, ...p.attackField]) {
+      if (hasPatriotaBuff(c)) bonus += 1;
+    }
+  }
+  return bonus;
+}
+
+/** Cost discount of the 'talisman_reciclado' activated ability. */
+export const TALISMAN_RECYCLE_DISCOUNT = 3;
+
+/**
+ * 'talisman_reciclado' (Bernardo O'Higgins): once per turn, play a Talisman
+ * from your Cementerio or Destierro reducing its cost by 3 (min 0). After
+ * resolving, the talisman is REMOVED from the game (zona R).
+ */
+export function hasTalismanRecycle(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('talisman_reciclado') ?? false;
+}
+
+/**
  * Effective combat force of an ally — single source of truth:
  * - weakened ('debilitar_aliado') → 0, ignoring every bonus;
  * - strength-locked ('fuerza_inmutable' rival) → printed fuerza only;
- * - otherwise printed fuerza + equipped weapon bonus + temp bonuses.
+ * - otherwise printed fuerza + weapon bonus + temp bonuses + Patriota buff.
  */
 export function effectiveForce(
   ally: CardInPlay,
@@ -257,7 +302,8 @@ export function effectiveForce(
   return (
     ally.fuerza +
     (owner.equippedWeapons[ally.instanceId]?.bonusFuerza ?? 0) +
-    (owner.weaponTempBonuses[ally.instanceId] ?? 0)
+    (owner.weaponTempBonuses[ally.instanceId] ?? 0) +
+    patriotaBonus(ally, players)
   );
 }
 

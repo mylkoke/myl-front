@@ -26,8 +26,11 @@ import {
   hasDrawDiscardGold,
   hasImbloqueable,
   hasOroInicial,
+  hasPlayFromGraveyard,
+  hasTalismanRecycle,
   isBasicGold,
   hasWeakenAbility,
+  TALISMAN_RECYCLE_DISCOUNT,
   WEAKEN_GOLD_COST,
   isHandOnly,
   resolveInteractiveCombat,
@@ -187,6 +190,25 @@ interface GameActions {
   activateGoldDrawDiscard: (goldInstanceId: string, playerId: PlayerId) => void;
   /** Resuelve el descarte obligatorio: carta de la mano → cementerio. */
   discardFromHand: (cardInstanceId: string, playerId: PlayerId) => void;
+  /**
+   * 'jugar_desde_cementerio': juega la carta desde el Cementerio o Destierro
+   * propio como si estuviera en la mano, pagando su coste normal.
+   */
+  playFromZone: (
+    cardInstanceId: string,
+    zone: 'graveyard' | 'exile',
+    playerId: PlayerId,
+  ) => void;
+  /**
+   * 'talisman_reciclado': 1 vez por turno, juega un talismán desde tu
+   * Cementerio o Destierro con coste −3 (mín. 0); tras resolverse va a la
+   * zona de Removidas.
+   */
+  playRecycledTalisman: (
+    sourceInstanceId: string,
+    talismanInstanceId: string,
+    playerId: PlayerId,
+  ) => void;
   /**
    * 'anular_respuesta': durante la ventana de respuesta, juega el talismán
    * de anulación — la carta jugada se remueve del juego y el respondedor
@@ -1131,6 +1153,150 @@ export const useGameStore = create<GameStore>()(
         get().addLog(`${player.name} descartó ${card.nombre}.`, 'action');
       },
 
+      playFromZone: (cardInstanceId, zone, playerId) => {
+        const { players, turn, combat, responseWindow } = get();
+        const player = players[playerId];
+        if (responseWindow) {
+          get().addLog('Espera: hay una ventana de respuesta abierta.', 'error');
+          return;
+        }
+        if (combat) {
+          get().addLog('Hay un combate en curso.', 'error');
+          return;
+        }
+        const card = player[zone].find((c) => c.instanceId === cardInstanceId);
+        if (!card || !hasPlayFromGraveyard(card)) return;
+
+        // Mismas reglas que jugar desde la mano (turno, fase, coste, líneas).
+        const { allowed, reason } = canPlayCard(card, player, turn);
+        if (!allowed) {
+          get().addLog(reason ?? 'No puedes jugar esa carta ahora.', 'error');
+          return;
+        }
+        if (card.tipo !== 'aliado') {
+          get().addLog('Solo los aliados pueden jugarse así por ahora.', 'error');
+          return;
+        }
+
+        const paid = player.gold.slice(player.gold.length - card.coste);
+        const remaining = player.gold.slice(0, player.gold.length - card.coste);
+        set((s) => {
+          const p = s.players[playerId];
+          return {
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                [zone]: p[zone].filter((c) => c.instanceId !== cardInstanceId),
+                defenseField: [...p.defenseField, { ...card, summonedThisTurn: true, tapped: false }],
+                gold: remaining,
+                goldPaid: [...p.goldPaid, ...paid],
+                goldCount: remaining.length,
+                goldSpentThisTurn: card.coste > 0 ? true : p.goldSpentThisTurn,
+              },
+            },
+            turn: { ...s.turn, cardsPlayedThisTurn: s.turn.cardsPlayedThisTurn + 1 },
+          };
+        });
+        get().addLog(
+          `${player.name} juega a ${card.nombre} desde ${zone === 'graveyard' ? 'su Cementerio' : 'su Destierro'} (−${card.coste} Oros).`,
+          'action'
+        );
+
+        // La carta jugada abre la ventana de respuesta normal.
+        const responderId: PlayerId = playerId === 'player' ? 'opponent' : 'player';
+        set({
+          responseWindow: {
+            cardInstanceId: card.instanceId,
+            cardName: card.nombre,
+            cardCoste: card.coste,
+            cardOwnerId: playerId,
+            responderId,
+            expiresAt: Date.now() + RESPONSE_WINDOW_MS,
+          },
+        });
+      },
+
+      playRecycledTalisman: (sourceInstanceId, talismanInstanceId, playerId) => {
+        const { players, turn, combat, responseWindow } = get();
+        const player = players[playerId];
+        if (responseWindow || combat) {
+          get().addLog('No puedes activar esta habilidad ahora.', 'error');
+          return;
+        }
+        if (turn.currentPlayer !== playerId || turn.phase !== 'vigilia') {
+          get().addLog('Esta habilidad solo puede activarse en tu Vigilia.', 'error');
+          return;
+        }
+        const source = [...player.defenseField, ...player.attackField].find(
+          (c) => c.instanceId === sourceInstanceId
+        );
+        if (!source || !hasTalismanRecycle(source)) return;
+        if (player.allyAbilityUsedThisTurn.includes(sourceInstanceId)) {
+          get().addLog('Esta habilidad ya fue usada este turno.', 'error');
+          return;
+        }
+
+        const zone: 'graveyard' | 'exile' | null = player.graveyard.some(
+          (c) => c.instanceId === talismanInstanceId
+        )
+          ? 'graveyard'
+          : player.exile.some((c) => c.instanceId === talismanInstanceId)
+          ? 'exile'
+          : null;
+        if (!zone) return;
+        const talisman = player[zone].find((c) => c.instanceId === talismanInstanceId)!;
+        if (talisman.tipo !== 'talisman') return;
+
+        const cost = Math.max(0, talisman.coste - TALISMAN_RECYCLE_DISCOUNT);
+        if (cost > player.goldCount + player.talismanGold) {
+          get().addLog(`Necesitas ${cost} de oro para jugar ${talisman.nombre}.`, 'error');
+          return;
+        }
+
+        // Pago (oros virtuales de talismán primero) y resolución → Removidas.
+        const fromVirtual = Math.min(player.talismanGold, cost);
+        const fromCards = cost - fromVirtual;
+        const paid = player.gold.slice(player.gold.length - fromCards);
+        const remaining = player.gold.slice(0, player.gold.length - fromCards);
+        set((s) => {
+          const p = s.players[playerId];
+          return {
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                [zone]: p[zone].filter((c) => c.instanceId !== talismanInstanceId),
+                removed: [...p.removed, talisman],
+                gold: remaining,
+                goldPaid: [...p.goldPaid, ...paid],
+                goldCount: remaining.length,
+                talismanGold: p.talismanGold - fromVirtual,
+                goldSpentThisTurn: fromCards > 0 ? true : p.goldSpentThisTurn,
+                allyAbilityUsedThisTurn: [...p.allyAbilityUsedThisTurn, sourceInstanceId],
+              },
+            },
+          };
+        });
+        get().addLog(
+          `${source.nombre}: ${player.name} juega ${talisman.nombre} desde ${zone === 'graveyard' ? 'su Cementerio' : 'su Destierro'} (coste −${TALISMAN_RECYCLE_DISCOUNT} → ${cost}): "${talisman.habilidad}" → removida del juego.`,
+          'action'
+        );
+
+        // El talismán jugado abre la ventana de respuesta normal.
+        const responderId: PlayerId = playerId === 'player' ? 'opponent' : 'player';
+        set({
+          responseWindow: {
+            cardInstanceId: talisman.instanceId,
+            cardName: talisman.nombre,
+            cardCoste: talisman.coste,
+            cardOwnerId: playerId,
+            responderId,
+            expiresAt: Date.now() + RESPONSE_WINDOW_MS,
+          },
+        });
+      },
+
       respondWithAnnul: (responseCardInstanceId, playerId) => {
         const { players, responseWindow } = get();
         if (!responseWindow || playerId !== responseWindow.responderId) return;
@@ -1155,7 +1321,9 @@ export const useGameStore = create<GameStore>()(
         const owner = players[responseWindow.cardOwnerId];
         const target =
           owner.defenseField.find((c) => c.instanceId === responseWindow.cardInstanceId) ??
-          owner.graveyard.find((c) => c.instanceId === responseWindow.cardInstanceId);
+          owner.graveyard.find((c) => c.instanceId === responseWindow.cardInstanceId) ??
+          // Talismanes reciclados ('talisman_reciclado') se resuelven en Removidas
+          owner.removed.find((c) => c.instanceId === responseWindow.cardInstanceId);
         if (!target) {
           get().closeResponseWindow();
           return;
@@ -1185,7 +1353,10 @@ export const useGameStore = create<GameStore>()(
             // La carta anulada se REMUEVE del juego (zona R), venga de donde venga.
             defenseField: o.defenseField.filter((c) => c.instanceId !== target.instanceId),
             graveyard: o.graveyard.filter((c) => c.instanceId !== target.instanceId),
-            removed: [...o.removed, target],
+            removed: [
+              ...o.removed.filter((c) => c.instanceId !== target.instanceId),
+              target,
+            ],
           };
           const responderPatch = {
             hand: [

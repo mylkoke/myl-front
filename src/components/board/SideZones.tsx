@@ -7,7 +7,12 @@ import { CardView } from '@/components/cards/CardView';
 import { useGameStore } from '@/store/gameStore';
 import { useGameActions } from '@/hooks/useGameActions';
 import { useDropZone } from '@/utils/dragManager';
-import { GOLD_TALISMAN_YIELD, hasDrawDiscardGold, hasGoldTalismanAbility } from '@/utils/gameRules';
+import {
+  GOLD_TALISMAN_YIELD,
+  hasDrawDiscardGold,
+  hasGoldTalismanAbility,
+  hasPlayFromGraveyard,
+} from '@/utils/gameRules';
 
 interface SideZonesProps {
   player: PlayerState;
@@ -25,9 +30,11 @@ interface SmallZoneProps {
   title?: string;
   /** Ancla DOM para efectos visuales (ver src/utils/*Fx.ts). */
   dataFx?: string;
+  /** Contorno dorado: la zona contiene cartas con acciones disponibles. */
+  highlight?: boolean;
 }
 
-function SmallZone({ label, letter, letterColor, cards, onInspect, title, dataFx }: SmallZoneProps) {
+function SmallZone({ label, letter, letterColor, cards, onInspect, title, dataFx, highlight = false }: SmallZoneProps) {
   const top = cards.at(-1);
 
   return (
@@ -43,7 +50,11 @@ function SmallZone({ label, letter, letterColor, cards, onInspect, title, dataFx
           'relative w-16 h-[85px] sm:w-20 sm:h-[107px] lg:w-24 lg:h-32 rounded-lg border-2 border-dashed',
           'bg-slate-900/60 flex items-center justify-center transition-all',
           onInspect ? 'cursor-pointer hover:border-slate-500/80 active:scale-[0.97]' : 'cursor-default',
-          cards.length > 0 ? 'border-slate-600/60' : 'border-slate-800/60',
+          highlight
+            ? 'border-solid border-yellow-400 shadow-lg shadow-yellow-400/25 animate-pulse'
+            : cards.length > 0
+            ? 'border-slate-600/60'
+            : 'border-slate-800/60',
         ].join(' ')}
       >
         {top ? (
@@ -202,7 +213,12 @@ const ZONE_META: Record<InspectableZone, { title: string; letter: string }> = {
 
 export function SideZones({ player, playerId, isOpponent = false }: SideZonesProps) {
   const [viewerZone, setViewerZone] = useState<InspectableZone | null>(null);
-  const { activateGoldTalisman, activateGoldDrawDiscard } = useGameActions();
+  const { activateGoldTalisman, activateGoldDrawDiscard, playFromZone } = useGameActions();
+
+  // 'jugar_desde_cementerio': si una zona propia contiene cartas jugables
+  // desde ahí, la zona brilla dorada y la carta se destaca en el visor.
+  const playableFromGraveyard = !isOpponent && player.graveyard.some(hasPlayFromGraveyard);
+  const playableFromExile = !isOpponent && player.exile.some(hasPlayFromGraveyard);
 
   // Regla: un jugador solo puede revisar SUS PROPIAS zonas. Punto de extensión:
   // cuando una habilidad/habilidad especial permita mirar zonas del oponente,
@@ -248,14 +264,15 @@ export function SideZones({ player, playerId, isOpponent = false }: SideZonesPro
           </div>
           <SmallZone letter="+" letterColor="text-slate-300" label="Cementerio"
             cards={player.graveyard} onInspect={inspect('graveyard')} title="+ — Cementerio"
-            dataFx={`grave-${playerId}`} />
+            dataFx={`grave-${playerId}`} highlight={playableFromGraveyard} />
         </div>
 
         {/* Row 3: O — Oros (zona especial) | D — Destierro */}
         <div className="flex gap-1.5">
           <GoldZone cards={player.gold} goldCount={player.goldCount} talismanGold={player.talismanGold} playerId={playerId} onInspect={inspect('gold')} />
           <SmallZone letter="D" letterColor="text-purple-400" label="Destierro"
-            cards={player.exile} onInspect={inspect('exile')} title="D — Destierro" />
+            cards={player.exile} onInspect={inspect('exile')} title="D — Destierro"
+            highlight={playableFromExile} />
         </div>
       </div>
 
@@ -283,6 +300,19 @@ export function SideZones({ player, playerId, isOpponent = false }: SideZonesPro
                         onUse: () => activateGoldDrawDiscard(card.instanceId, playerId),
                       }
                     : null
+              : (viewerZone === 'graveyard' || viewerZone === 'exile') && !isOpponent
+              ? (card) =>
+                  hasPlayFromGraveyard(card)
+                    ? {
+                        label: `Jugar carta (−${card.coste} Oros)`,
+                        onUse: () => playFromZone(card.instanceId, viewerZone, playerId),
+                      }
+                    : null
+              : undefined
+          }
+          isHighlighted={
+            (viewerZone === 'graveyard' || viewerZone === 'exile') && !isOpponent
+              ? hasPlayFromGraveyard
               : undefined
           }
         />

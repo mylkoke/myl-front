@@ -17,6 +17,8 @@ interface ZoneViewerProps {
    * Devuelve null para cartas sin acción.
    */
   detailAction?: (card: CardInPlay) => { label: string; onUse: () => void } | null;
+  /** Cartas a destacar con marco dorado (p.ej. jugables desde esta zona). */
+  isHighlighted?: (card: CardInPlay) => boolean;
 }
 
 /**
@@ -25,7 +27,7 @@ interface ZoneViewerProps {
  * decide si abrirlo (ver `canInspectZone` en SideZones). Una habilidad o
  * habilidad especial de carta podrá habilitar mirar zonas del oponente.
  */
-export function ZoneViewer({ isOpen, onClose, title, letter, cards, detailAction }: ZoneViewerProps) {
+export function ZoneViewer({ isOpen, onClose, title, letter, cards, detailAction, isHighlighted }: ZoneViewerProps) {
   const [detailCard, setDetailCard] = useState<CardInPlay | null>(null);
   const action = detailCard ? detailAction?.(detailCard) ?? null : null;
 
@@ -45,6 +47,10 @@ export function ZoneViewer({ isOpen, onClose, title, letter, cards, detailAction
             {/* Se muestran en orden de llegada; la última carta es la de más arriba */}
             {cards.map((card, i) => (
               <div key={card.instanceId} className="relative">
+                {/* Marco dorado: carta con acción disponible desde esta zona */}
+                {isHighlighted?.(card) && (
+                  <div className="absolute -inset-0.5 rounded-lg ring-2 ring-yellow-400 animate-pulse pointer-events-none z-20" />
+                )}
                 <CardView card={card} size="sm" onClick={() => setDetailCard(card)} />
                 <span className="absolute -top-1 -left-1 z-10 bg-slate-800 text-slate-400 text-[8px] font-bold rounded-full w-4 h-4 flex items-center justify-center border border-slate-600">
                   {i + 1}

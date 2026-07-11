@@ -169,6 +169,27 @@ export const SEED_ABILITIES = [
     categoria: 'carta',
   },
   {
+    code: 'jugar_desde_cementerio',
+    nombre: 'Jugar desde Cementerio/Destierro',
+    descripcion: 'Puedes jugar esta carta desde tu Cementerio o tu Destierro como si estuviera en tu Mano, pagando su Coste normal. Las zonas con cartas jugables brillan doradas.',
+    implemented: true,
+    categoria: 'carta',
+  },
+  {
+    code: 'bonus_patriotas',
+    nombre: 'Bonus a Patriotas (+1)',
+    descripcion: 'Mientras esta carta esté en el tablero (línea de ataque o defensa), TODOS los Aliados de raza Patriota — de ambos jugadores, incluida ella misma — ganan +1 a la Fuerza.',
+    implemented: true,
+    categoria: 'carta',
+  },
+  {
+    code: 'talisman_reciclado',
+    nombre: 'Talismán reciclado',
+    descripcion: 'Una vez por turno, puedes jugar un Talismán desde tu Cementerio o Destierro reduciendo su Coste en 3 (mínimo 0). Tras resolverse, ese talismán se remueve del juego.',
+    implemented: true,
+    categoria: 'carta',
+  },
+  {
     code: 'orbe',
     nombre: 'Orbe',
     descripcion: 'Restricción de construcción de mazo (la más estricta): solo puedes tener UNA carta con la habilidad Orbe en todo tu Mazo Castillo, sin importar su nombre — prohíbe la segunda copia y cualquier otra carta Orbe distinta.',
