@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -61,6 +61,7 @@ const EMPTY_FORM: CardFormData = {
   numeroCarta: 0,
   cantidadEdicion: 0,
   expansion: '',
+  raza: '',
 };
 
 function asCardInPlay(card: Card): CardInPlay {
@@ -151,6 +152,7 @@ export function CardEditorPage() {
       numeroCarta: card.numeroCarta ?? 0,
       cantidadEdicion: card.cantidadEdicion ?? 0,
       expansion: card.expansion ?? '',
+      raza: card.raza ?? '',
     });
     updateLocalImage(null);
     setFormOpen(true);
@@ -321,6 +323,15 @@ export function CardEditorPage() {
       setMessage(e instanceof Error ? e.message : 'Error creando la habilidad');
     }
   };
+
+  // Razas existentes en el catálogo → chips seleccionables en el formulario.
+  const razas = useMemo(
+    () =>
+      [...new Set(catalog.map((c) => c.raza).filter((r): r is string => !!r))].sort((a, b) =>
+        a.localeCompare(b),
+      ),
+    [catalog],
+  );
 
   if (loading) {
     return (
@@ -569,6 +580,39 @@ export function CardEditorPage() {
               />
             </label>
           </div>
+
+          {/* Raza (aliados): chips de razas existentes + input para una nueva */}
+          {form.tipo === 'aliado' && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1.5">Raza</p>
+              <div className="flex flex-wrap gap-2 items-center">
+                {razas.map((r) => {
+                  const active = form.raza === r;
+                  return (
+                    <button
+                      key={r}
+                      onClick={() => setForm((f) => ({ ...f, raza: active ? '' : r }))}
+                      className={[
+                        'px-2.5 py-1.5 rounded-full text-xs font-medium border transition-all',
+                        active
+                          ? 'bg-amber-500/20 border-amber-400 text-amber-300'
+                          : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500',
+                      ].join(' ')}
+                    >
+                      {r}
+                    </button>
+                  );
+                })}
+                <input
+                  type="text"
+                  placeholder="…u otra raza"
+                  value={razas.includes(form.raza) ? '' : form.raza}
+                  onChange={(e) => setForm((f) => ({ ...f, raza: e.target.value }))}
+                  className={`${inputCls} !w-32`}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Numeración de la edición: "HC-35/160" → serie HC, nº 35, total 160 */}
           <div className="grid grid-cols-3 gap-2">

@@ -62,6 +62,8 @@ export interface CardFormData {
   cantidadEdicion: number;
   /** Código de la serie/expansión (p.ej. "HC") */
   expansion: string;
+  /** Raza del aliado (p.ej. "Patriota", "Caudillo") */
+  raza: string;
 }
 
 function toServerPayload(data: CardFormData) {
@@ -78,6 +80,7 @@ function toServerPayload(data: CardFormData) {
     numero_carta: data.numeroCarta,
     cantidad_edicion: data.cantidadEdicion,
     ...(data.expansion.trim() ? { expansion: data.expansion.trim() } : {}),
+    ...(data.raza.trim() ? { raza: data.raza.trim() } : {}),
   };
 }
 
