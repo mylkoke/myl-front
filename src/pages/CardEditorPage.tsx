@@ -10,6 +10,7 @@ import {
   Pencil,
   Plus,
   RotateCw,
+  Search,
   Sparkles,
   Trash2,
   X,
@@ -324,6 +325,37 @@ export function CardEditorPage() {
     }
   };
 
+  // ── Orden y búsqueda del catálogo ─────────────────────────────────────
+  const [sortBy, setSortBy] = useState<'numero' | 'coste' | 'fuerza' | 'tipo'>('numero');
+  const [search, setSearch] = useState('');
+
+  const visibleCatalog = useMemo(() => {
+    // Búsqueda insensible a mayúsculas y tildes ("rodriguez" encuentra "Rodríguez")
+    const normalize = (s: string) =>
+      s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const q = normalize(search.trim());
+    const filtered = q
+      ? catalog.filter(
+          (c) =>
+            normalize(c.nombre).includes(q) ||
+            (/^\d+$/.test(q) && c.numeroCarta === Number(q)),
+        )
+      : catalog;
+    const byName = (a: Card, b: Card) => a.nombre.localeCompare(b.nombre);
+    return [...filtered].sort((a, b) => {
+      switch (sortBy) {
+        case 'numero':
+          return (a.numeroCarta || Infinity) - (b.numeroCarta || Infinity) || byName(a, b);
+        case 'coste':
+          return a.coste - b.coste || byName(a, b);
+        case 'fuerza':
+          return b.fuerza - a.fuerza || byName(a, b);
+        case 'tipo':
+          return a.tipo.localeCompare(b.tipo) || byName(a, b);
+      }
+    });
+  }, [catalog, search, sortBy]);
+
   // Razas existentes en el catálogo → chips seleccionables en el formulario.
   const razas = useMemo(
     () =>
@@ -391,10 +423,40 @@ export function CardEditorPage() {
         </div>
       )}
 
+      {/* Toolbar: búsqueda por nombre/número + orden */}
+      <div className="flex items-center gap-2 px-3 sm:px-4 pt-3">
+        <div className="relative flex-1">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+          <input
+            type="text"
+            placeholder="Buscar por nombre o número…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className={`${inputCls} !pl-8`}
+          />
+        </div>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+          className={`${inputCls} !w-auto`}
+          title="Ordenar cartas"
+        >
+          <option value="numero">Por número</option>
+          <option value="coste">Por coste</option>
+          <option value="fuerza">Por fuerza</option>
+          <option value="tipo">Por tipo</option>
+        </select>
+      </div>
+
       {/* Catalog grid */}
       <div className="flex-1 overflow-y-auto p-3 sm:p-4">
+        {visibleCatalog.length === 0 && (
+          <p className="text-center text-slate-500 text-sm py-8">
+            Ninguna carta coincide con "{search}".
+          </p>
+        )}
         <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-3">
-          {catalog.map((card) => (
+          {visibleCatalog.map((card) => (
             <div key={card.id} className="flex flex-col items-center gap-1.5">
               <CardView card={asCardInPlay(card)} size="sm" onClick={() => openEdit(card)} />
               <div className="flex gap-1 w-full">
