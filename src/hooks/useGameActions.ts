@@ -2,6 +2,7 @@ import { useGameStore } from '@/store/gameStore';
 import { useOnlineStore } from '@/store/onlineStore';
 import { pushCurrentState } from '@/utils/onlineSync';
 import type { PlayerId } from '@/types/game.types';
+import type { CardInPlay } from '@/types/card.types';
 
 /**
  * Single interception point for game actions. In online mode:
@@ -28,6 +29,7 @@ export function useGameActions() {
   const passResponse = useGameStore((s) => s.passResponse);
   const closeResponseWindow = useGameStore((s) => s.closeResponseWindow);
   const weakenAlly = useGameStore((s) => s.weakenAlly);
+  const millDestroyAlly = useGameStore((s) => s.millDestroyAlly);
   const playFromZone = useGameStore((s) => s.playFromZone);
   const playRecycledTalisman = useGameStore((s) => s.playRecycledTalisman);
 
@@ -84,7 +86,9 @@ export function useGameActions() {
     };
 
   return {
-    playCard:      guarded(playCard),
+    // 'relampago'/'instantaneo' se juegan fuera de turno: el gate online es de
+    // propiedad del asiento; la legalidad de turno/fase la valida canPlayCard.
+    playCard:      ownerGated<[CardInPlay]>(playCard),
     equipWeapon:   guarded(equipWeapon),
     declareAttack: guarded(declareAttack),
     defendWith:    guarded(defendWith, { forDefense: true }),
@@ -106,6 +110,7 @@ export function useGameActions() {
       pushCurrentState();
     },
     weakenAlly:    guarded(weakenAlly),
+    millDestroyAlly: guarded(millDestroyAlly),
     playFromZone:  guarded(playFromZone),
     playRecycledTalisman: guarded(playRecycledTalisman),
     regroupGold:   guarded(regroupGold),

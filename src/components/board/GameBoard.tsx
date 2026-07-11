@@ -22,7 +22,8 @@ import {
   ChevronRight, SkipForward, RefreshCw, Loader2, Settings, Flag, WifiOff, Sparkles,
 } from 'lucide-react';
 import { APP_VERSION } from '@/version';
-import { effectiveForce, hasAnnulResponse, hasImbloqueable } from '@/utils/gameRules';
+import { effectiveForce, hasAnnulResponse, hasImbloqueable, hasRelampago } from '@/utils/gameRules';
+import { playLightningFx } from '@/utils/lightningFx';
 import { useTargetingStore } from '@/store/targetingStore';
 import type { PlayerId } from '@/types/game.types';
 
@@ -49,10 +50,12 @@ export function GameBoard() {
   const { endPlayerTurn, advancePhase, resetGame, defendWith, regroupGold, regroupAllies,
     passCombat, playCombatTalisman } = useGameActions();
   const weakenTargeting = useTargetingStore((s) => s.weaken);
+  const destroyTargeting = useTargetingStore((s) => s.destroy);
   const cancelTargeting = useTargetingStore((s) => s.cancel);
   const pendingDiscard = useGameStore((s) => s.pendingDiscard);
   const responseWindow = useGameStore((s) => s.responseWindow);
-  const { discardFromHand, respondWithAnnul, passResponse, closeResponseWindow, resolveShuffleChoice } = useGameActions();
+  const { discardFromHand, respondWithAnnul, passResponse, closeResponseWindow, resolveShuffleChoice,
+    playCard: playCardAction } = useGameActions();
   const pendingShuffleChoice = useGameStore((s) => s.pendingShuffleChoice);
 
   const [rotPhase, setRotPhase]       = useState<'idle' | 'out' | 'in'>('idle');
@@ -75,6 +78,17 @@ export function GameBoard() {
   const opponentOnline = useOnlineStore((s) => s.opponentOnline);
   const resetOnline   = useOnlineStore((s) => s.reset);
   const isOnline = mode === 'online' && mySeat !== null;
+
+  // FX de Relámpago: se dispara cuando una carta 'relampago' se juega fuera
+  // de la Vigilia de su dueño (fxLightning cambia en el estado sincronizado).
+  const fxLightning = useGameStore((s) => s.fxLightning);
+  const lastLightningRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (fxLightning && fxLightning !== lastLightningRef.current) {
+      lastLightningRef.current = fxLightning;
+      playLightningFx();
+    }
+  }, [fxLightning]);
 
   // Reloj de la ventana de respuesta: tick cada 250 ms mientras esté abierta;
   // al expirar la cierra el dueño de la carta jugada (o cualquiera en local).
@@ -581,11 +595,13 @@ export function GameBoard() {
         </div>
       )}
 
-      {/* ── Targeting banner: eligiendo objetivo de 'debilitar_aliado' ── */}
-      {weakenTargeting && (
+      {/* ── Targeting banner: eligiendo objetivo (debilitar / destruir) ── */}
+      {(weakenTargeting || destroyTargeting) && (
         <div className="absolute top-14 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 border border-red-500/50 rounded-full px-4 py-2 flex items-center gap-3 shadow-xl">
           <span className="text-xs text-red-300 font-bold">
-            Elige un aliado: tendrá Fuerza 0 hasta la Fase Final
+            {weakenTargeting
+              ? 'Elige un aliado: tendrá Fuerza 0 hasta la Fase Final'
+              : 'Elige un aliado: será destruido (botas 3 cartas de tu Castillo)'}
           </span>
           <button
             onClick={cancelTargeting}
@@ -778,6 +794,36 @@ export function GameBoard() {
                     })}
                   </div>
                 )}
+
+                {/* Bloqueador sorpresa: aliados 'relampago' jugables desde la
+                    mano en pleno combate (pagan su coste normal) */}
+                {(!isOnline || mySeat === defenderId) &&
+                  (() => {
+                    const flashAllies = defenderPlayer.hand.filter(
+                      (c) =>
+                        c.tipo === 'aliado' &&
+                        hasRelampago(c) &&
+                        c.coste <= defenderPlayer.goldCount,
+                    );
+                    if (flashAllies.length === 0) return null;
+                    return (
+                      <div className="mb-3">
+                        <p className="text-[10px] uppercase tracking-wide text-blue-300 font-bold mb-1.5 text-center">
+                          ⚡ Relámpago: puedes bajar un aliado ahora
+                        </p>
+                        <div className="flex flex-wrap justify-center gap-2">
+                          {flashAllies.map((c) => (
+                            <CardView
+                              key={c.instanceId}
+                              card={c}
+                              size="sm"
+                              onClick={() => playCardAction(c, defenderId)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                 <Button
                   variant="danger"

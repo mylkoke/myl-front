@@ -12,11 +12,13 @@ import { DeckSearchModal } from './DeckSearchModal';
 import {
   effectiveForce,
   hasCaudilloSummon,
+  hasMillDestroy,
   hasTalismanRecycle,
   hasWeakenAbility,
   isSummonableByCaudillo,
   strengthLockedFor,
   CAUDILLO_SUMMON_GOLD_COST,
+  MILL_DESTROY_COST,
   TALISMAN_RECYCLE_DISCOUNT,
   WEAKEN_GOLD_COST,
 } from '@/utils/gameRules';
@@ -33,7 +35,7 @@ interface AllySlotProps {
 export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'md' }: AllySlotProps) {
   const [detailCard, setDetailCard] = useState<CardInPlay | null>(null);
   const [deckSearchOpen, setDeckSearchOpen] = useState(false);
-  const { equipWeapon, summonCaudilloFromDeck, weakenAlly, playRecycledTalisman } = useGameActions();
+  const { equipWeapon, summonCaudilloFromDeck, weakenAlly, millDestroyAlly, playRecycledTalisman } = useGameActions();
   const [recycleOpen, setRecycleOpen] = useState(false);
   const turn   = useGameStore((s) => s.turn);
   const combat = useGameStore((s) => s.combat);
@@ -47,9 +49,12 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
   const force = useGameStore((s) => effectiveForce(ally, s.players[playerId], s.players));
   const displayAlly: CardInPlay = { ...ally, fuerza: force };
 
-  // Modo selección de objetivo ('debilitar_aliado'): este aliado es elegible.
+  // Modo selección de objetivo ('debilitar_aliado' / 'botar3_destruye'):
+  // este aliado es elegible y se ilumina.
   const weakenTargeting = useTargetingStore((s) => s.weaken);
+  const destroyTargeting = useTargetingStore((s) => s.destroy);
   const cancelTargeting = useTargetingStore((s) => s.cancel);
+  const anyTargeting = weakenTargeting ?? destroyTargeting;
 
   const isMyTurn = turn.currentPlayer === playerId && !isOpponent;
 
@@ -86,6 +91,15 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
         Math.max(0, c.coste - TALISMAN_RECYCLE_DISCOUNT) <=
           player.goldCount + player.talismanGold,
     );
+
+  // 'botar3_destruye': bota 3 cartas del Mazo Castillo → destruye un aliado.
+  const allyHasMillDestroy = hasMillDestroy(ally);
+  const canUseMillDestroy =
+    isMyTurn &&
+    allyHasMillDestroy &&
+    !combat &&
+    turn.phase === 'vigilia' &&
+    player.deck.length >= MILL_DESTROY_COST;
 
   // 'invocacion_caudillo': el aliado puede pagar 3 oros para invocar desde el
   // Mazo Castillo un aliado de su misma raza con coste ≤ 4, 1 vez por turno.
@@ -130,7 +144,7 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
         {/* Ally card */}
         <div className="relative z-10">
           {/* Marco pulsante: aliado elegible mientras se elige objetivo */}
-          {weakenTargeting && (
+          {anyTargeting && (
             <div className="absolute -inset-1 rounded-xl ring-2 ring-red-400 animate-pulse pointer-events-none z-30" />
           )}
           <CardView
@@ -146,10 +160,20 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
                     );
                     cancelTargeting();
                   }
+                : destroyTargeting
+                ? () => {
+                    millDestroyAlly(
+                      destroyTargeting.sourceInstanceId,
+                      ally.instanceId,
+                      playerId,
+                      destroyTargeting.playerId,
+                    );
+                    cancelTargeting();
+                  }
                 : () => setDetailCard(ally)
             }
             dragPayload={
-              !isOpponent && !weakenTargeting
+              !isOpponent && !anyTargeting
                 ? { card: ally, sourceZone: 'defense', sourcePlayer: playerId }
                 : undefined
             }
@@ -208,6 +232,11 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
               }
             : detailCard && detailCard.instanceId === ally.instanceId && allyHasRecycleAbility && !isOpponent
             ? () => { setDetailCard(null); setRecycleOpen(true); }
+            : detailCard && detailCard.instanceId === ally.instanceId && allyHasMillDestroy && !isOpponent
+            ? () => {
+                setDetailCard(null);
+                useTargetingStore.getState().startDestroy(ally.instanceId, playerId);
+              }
             : undefined
         }
         canUseSpecialAbility={
@@ -216,7 +245,9 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
               ? canUseSummonAbility
               : allyHasWeakenAbility
               ? canUseWeakenAbility
-              : canUseRecycleAbility
+              : allyHasRecycleAbility
+              ? canUseRecycleAbility
+              : canUseMillDestroy
             : canUseWeaponAbility
         }
         specialAbilityLabel={
@@ -225,7 +256,9 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
               ? `Invocar Caudillo (−${CAUDILLO_SUMMON_GOLD_COST} Oros)`
               : allyHasWeakenAbility
               ? `Debilitar: Fuerza 0 hasta la Fase Final (−${WEAKEN_GOLD_COST} Oro)`
-              : `Talismán del Cementerio/Destierro (coste −${TALISMAN_RECYCLE_DISCOUNT})`
+              : allyHasRecycleAbility
+              ? `Talismán del Cementerio/Destierro (coste −${TALISMAN_RECYCLE_DISCOUNT})`
+              : `Botar ${MILL_DESTROY_COST} cartas: destruir un aliado`
             : undefined
         }
       />

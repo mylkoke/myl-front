@@ -121,6 +121,12 @@ export interface GameState {
    * a"). Mientras está abierta, el juego queda en pausa. Se sincroniza online.
    */
   /**
+   * FX de Relámpago: timestamp del último juego de una carta 'relampago'
+   * fuera de la Vigilia de su dueño. GameBoard lo observa y dispara el
+   * destello en ambos clientes.
+   */
+  fxLightning: number | null;
+  /**
    * Decisión pendiente de 'barajar_mano_roba8' (Manuel Rodríguez): al entrar
    * en juego, su dueño puede barajar su mano en el Castillo y robar 8.
    * Se sincroniza online.

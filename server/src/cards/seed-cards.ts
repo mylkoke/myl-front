@@ -169,6 +169,27 @@ export const SEED_ABILITIES = [
     categoria: 'carta',
   },
   {
+    code: 'relampago',
+    nombre: 'Relámpago',
+    descripcion: 'Esta carta puede jugarse en cualquier momento en que por regla podría jugarse un Talismán: durante el turno rival, como bloqueador sorpresa ante un ataque declarado, o en la Fase Final del oponente — pagando su Coste normal.',
+    implemented: true,
+    categoria: 'especial',
+  },
+  {
+    code: 'agrupar_fase_final',
+    nombre: 'Agrupar en Fase Final',
+    descripcion: 'Al comienzo de cada Fase Final (de cualquier jugador), agrupa todas las cartas que controle el propietario de esta carta: sus oros pagados vuelven a la reserva y sus atacantes regresan enderezados a la defensa.',
+    implemented: true,
+    categoria: 'carta',
+  },
+  {
+    code: 'botar3_destruye',
+    nombre: 'Botar 3: destruir',
+    descripcion: 'Puedes botar 3 cartas de tu Mazo Castillo al Cementerio para destruir un Aliado objetivo (falla contra Indestructible y "No sale del juego").',
+    implemented: true,
+    categoria: 'carta',
+  },
+  {
     code: 'inanulable',
     nombre: 'Inanulable',
     descripcion: 'Esta carta no puede ser anulada por ninguna carta: toda anulación falla sobre ella.',

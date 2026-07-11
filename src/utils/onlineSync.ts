@@ -18,6 +18,7 @@ export function snapshotGameState(): GameState {
     pendingDiscard: s.pendingDiscard,
     pendingShuffleChoice: s.pendingShuffleChoice,
     responseWindow: s.responseWindow,
+    fxLightning: s.fxLightning,
   };
 }
 

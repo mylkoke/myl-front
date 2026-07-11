@@ -25,11 +25,15 @@ import {
   RESPONSE_WINDOW_MS,
   hasDrawDiscardGold,
   cannotLeavePlay,
+  hasFinalPhaseRegroup,
   hasImbloqueable,
+  hasMillDestroy,
   hasOroInicial,
   hasPlayFromGraveyard,
+  hasRelampago,
   hasShuffleDraw,
   hasTalismanRecycle,
+  MILL_DESTROY_COST,
   SHUFFLE_DRAW_COUNT,
   isBasicGold,
   hasWeakenAbility,
@@ -121,6 +125,7 @@ export function buildInitialState(
     pendingDiscard: null,
     pendingShuffleChoice: null,
     responseWindow: null,
+    fxLightning: null,
     gameLog: [
       createLogEntry('Cada jugador comienza con su oro inicial en juego.', 'system'),
       createLogEntry('¡Partida iniciada! Turno del Jugador — Vigilia.', 'system'),
@@ -211,6 +216,17 @@ interface GameActions {
   playRecycledTalisman: (
     sourceInstanceId: string,
     talismanInstanceId: string,
+    playerId: PlayerId,
+  ) => void;
+  /**
+   * 'botar3_destruye' (Balmaceda SP): bota 3 cartas de tu Mazo Castillo al
+   * Cementerio para destruir un aliado objetivo (respeta 'indestructible' y
+   * 'no_sale_del_juego').
+   */
+  millDestroyAlly: (
+    sourceInstanceId: string,
+    targetInstanceId: string,
+    targetOwnerId: PlayerId,
     playerId: PlayerId,
   ) => void;
   /**
@@ -422,6 +438,15 @@ export const useGameStore = create<GameStore>()(
         if (!get().isGameOver && card.tipo === 'aliado' && hasShuffleDraw(card)) {
           set({ pendingShuffleChoice: { playerId, cardName: card.nombre } });
         }
+
+        // FX de Relámpago: la carta se jugó a velocidad de respuesta (fuera
+        // de la Vigilia propia) gracias a la keyword.
+        if (
+          hasRelampago(card) &&
+          (turn.currentPlayer !== playerId || turn.phase !== 'vigilia')
+        ) {
+          set({ fxLightning: Date.now() });
+        }
       },
 
       // ── Equip weapon via drag-drop ────────────────────────────────────────
@@ -534,7 +559,11 @@ export const useGameStore = create<GameStore>()(
       // daño todavía: se pasa a la sub-fase 'talisman_war', donde ambos
       // jugadores pueden jugar talismanes/habilidades empezando por el defensor.
       defendWith: (defenderInstanceId, playerId) => {
-        const { players, combat } = get();
+        const { players, combat, responseWindow } = get();
+        if (responseWindow) {
+          get().addLog('Espera: hay una ventana de respuesta abierta.', 'error');
+          return;
+        }
         if (!combat || combat.status !== 'awaiting_defense') return;
 
         const defenderId: PlayerId = combat.attackerId === 'player' ? 'opponent' : 'player';
@@ -913,6 +942,51 @@ export const useGameStore = create<GameStore>()(
         if (!next) { get().endTurn(); return; }
 
         set((s) => ({ turn: { ...s.turn, phase: next } }));
+
+        // 'agrupar_fase_final' (Balmaceda SP): al comenzar CADA Fase Final,
+        // los jugadores que controlen una carta con la habilidad reagrupan
+        // todo lo suyo (oros pagados → reserva; atacantes → defensa, listos).
+        if (next === 'final') {
+          for (const pid of ['player', 'opponent'] as PlayerId[]) {
+            const p = get().players[pid];
+            const hasRegrouper = [...p.defenseField, ...p.attackField].some(
+              hasFinalPhaseRegroup
+            );
+            if (!hasRegrouper) continue;
+            const regrouperName = [...p.defenseField, ...p.attackField].find(
+              hasFinalPhaseRegroup
+            )!.nombre;
+            set((s) => {
+              const pl = s.players[pid];
+              const newGold = [...pl.gold, ...pl.goldPaid];
+              const returned = pl.attackField.map((c) => ({
+                ...c,
+                tapped: false,
+                attackedThisTurn: false,
+              }));
+              return {
+                players: {
+                  ...s.players,
+                  [pid]: {
+                    ...pl,
+                    gold: newGold,
+                    goldPaid: [],
+                    goldCount: newGold.length,
+                    defenseField: [
+                      ...pl.defenseField.map((c) => ({ ...c, tapped: false })),
+                      ...returned,
+                    ],
+                    attackField: [],
+                  },
+                },
+              };
+            });
+            get().addLog(
+              `${regrouperName}: ${p.name} agrupa todas sus cartas al comenzar la Fase Final.`,
+              'action'
+            );
+          }
+        }
 
         const LABELS: Record<TurnPhase, string> = {
           agrupacion: 'Agrupación',
@@ -1317,6 +1391,74 @@ export const useGameStore = create<GameStore>()(
             expiresAt: Date.now() + RESPONSE_WINDOW_MS,
           },
         });
+      },
+
+      millDestroyAlly: (sourceInstanceId, targetInstanceId, targetOwnerId, playerId) => {
+        const { players, turn, combat, responseWindow, isGameOver } = get();
+        if (isGameOver || combat || responseWindow) return;
+        const player = players[playerId];
+
+        if (turn.currentPlayer !== playerId || turn.phase !== 'vigilia') {
+          get().addLog('Esta habilidad solo puede activarse en tu Vigilia.', 'error');
+          return;
+        }
+        const source = [...player.defenseField, ...player.attackField].find(
+          (c) => c.instanceId === sourceInstanceId
+        );
+        if (!source || !hasMillDestroy(source)) return;
+        if (player.deck.length < MILL_DESTROY_COST) {
+          get().addLog(`Necesitas al menos ${MILL_DESTROY_COST} cartas en tu Mazo Castillo.`, 'error');
+          return;
+        }
+
+        const targetOwner = players[targetOwnerId];
+        const target = [...targetOwner.defenseField, ...targetOwner.attackField].find(
+          (c) => c.instanceId === targetInstanceId && c.tipo === 'aliado'
+        );
+        if (!target) return;
+        if (hasIndestructible(target) || cannotLeavePlay(target)) {
+          get().addLog(`${target.nombre} no puede ser destruido.`, 'error');
+          return;
+        }
+
+        // Coste: botar 3 del propio Mazo Castillo al Cementerio.
+        const milled = player.deck.slice(0, MILL_DESTROY_COST).map(createCardInPlay);
+        set((s) => {
+          const p = s.players[playerId];
+          const payerPatch = {
+            deck: p.deck.slice(MILL_DESTROY_COST),
+            graveyard: [...p.graveyard, ...milled],
+            life: p.deck.length - MILL_DESTROY_COST,
+          };
+          const o = s.players[targetOwnerId];
+          const weapon = o.equippedWeapons[targetInstanceId];
+          const restWeapons = { ...o.equippedWeapons };
+          delete restWeapons[targetInstanceId];
+          const ownerPatch = {
+            defenseField: o.defenseField.filter((c) => c.instanceId !== targetInstanceId),
+            attackField: o.attackField.filter((c) => c.instanceId !== targetInstanceId),
+            graveyard: [...o.graveyard, target, ...(weapon ? [weapon] : [])],
+            equippedWeapons: restWeapons,
+          };
+          const same = playerId === targetOwnerId;
+          return {
+            players: {
+              ...s.players,
+              [playerId]: same
+                ? { ...p, ...ownerPatch, ...payerPatch, graveyard: [...p.graveyard, target, ...(weapon ? [weapon] : []), ...milled] }
+                : { ...p, ...payerPatch },
+              [targetOwnerId]: same
+                ? { ...p, ...ownerPatch, ...payerPatch, graveyard: [...p.graveyard, target, ...(weapon ? [weapon] : []), ...milled] }
+                : { ...o, ...ownerPatch },
+            },
+          };
+        });
+        get().addLog(
+          `${source.nombre}: ${player.name} bota ${MILL_DESTROY_COST} cartas y destruye a ${target.nombre}.`,
+          'combat'
+        );
+        const { isOver, winnerId } = checkGameOver(get().players);
+        if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
       },
 
       resolveShuffleChoice: (accept, playerId) => {

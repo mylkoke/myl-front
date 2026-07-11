@@ -33,7 +33,9 @@ export function canPlayCard(
   player: PlayerState,
   turn: TurnState
 ): { allowed: boolean; reason?: string } {
-  const instant = isInstantTalisman(card);
+  // 'instantaneo' (talismanes) y 'relampago' (cualquier tipo) se juegan a
+  // velocidad de respuesta: ignoran la restricción de turno y fase.
+  const instant = isInstantTalisman(card) || hasRelampago(card);
 
   if (!instant) {
     if (turn.currentPlayer !== player.id) {
@@ -211,6 +213,36 @@ export const RESPONSE_WINDOW_MS = 10_000;
  */
 export function hasAnnulResponse(card: Card): boolean {
   return card.habilidadesEspeciales?.includes('anular_respuesta') ?? false;
+}
+
+/**
+ * "Relámpago": this card can be played at ANY moment a talisman could be
+ * played — during the opponent's turn, as a surprise blocker while an attack
+ * awaits defense, or at the rival's Final Phase — paying its cost normally.
+ * Breaks the "allies/weapons/totems only in your Vigilia" rule.
+ */
+export function hasRelampago(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('relampago') ?? false;
+}
+
+/**
+ * 'agrupar_fase_final' (Balmaceda SP): at the start of EVERY Final Phase
+ * (either player's turn), regroup all cards its controller owns — paid gold
+ * returns to the reserve and attacking allies return untapped to defense.
+ */
+export function hasFinalPhaseRegroup(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('agrupar_fase_final') ?? false;
+}
+
+/** Cards milled by 'botar3_destruye'. */
+export const MILL_DESTROY_COST = 3;
+
+/**
+ * 'botar3_destruye' (Balmaceda SP): mill 3 cards from your own castle deck
+ * to destroy a target ally (blocked by 'indestructible' / 'no_sale_del_juego').
+ */
+export function hasMillDestroy(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('botar3_destruye') ?? false;
 }
 
 /**

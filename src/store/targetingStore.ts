@@ -9,12 +9,19 @@ import type { PlayerId } from '@/types/game.types';
 interface TargetingState {
   /** Active "weaken ally" targeting: source card + its controller. */
   weaken: { sourceInstanceId: string; playerId: PlayerId } | null;
+  /** Active "destroy ally" targeting ('botar3_destruye'). */
+  destroy: { sourceInstanceId: string; playerId: PlayerId } | null;
   startWeaken: (sourceInstanceId: string, playerId: PlayerId) => void;
+  startDestroy: (sourceInstanceId: string, playerId: PlayerId) => void;
   cancel: () => void;
 }
 
 export const useTargetingStore = create<TargetingState>((set) => ({
   weaken: null,
-  startWeaken: (sourceInstanceId, playerId) => set({ weaken: { sourceInstanceId, playerId } }),
-  cancel: () => set({ weaken: null }),
+  destroy: null,
+  startWeaken: (sourceInstanceId, playerId) =>
+    set({ weaken: { sourceInstanceId, playerId }, destroy: null }),
+  startDestroy: (sourceInstanceId, playerId) =>
+    set({ destroy: { sourceInstanceId, playerId }, weaken: null }),
+  cancel: () => set({ weaken: null, destroy: null }),
 }));
