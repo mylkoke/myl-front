@@ -43,6 +43,7 @@ class CardDto {
   @IsUrl({ require_tld: false }) image_url: string;
   @IsOptional() @IsString() categoria?: string;
   @IsOptional() @IsBoolean() available_to_common?: boolean;
+  @IsOptional() @IsBoolean() logica_pendiente?: boolean;
 }
 
 class PartialCardDto extends CardDto {

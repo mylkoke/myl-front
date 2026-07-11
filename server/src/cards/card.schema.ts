@@ -73,6 +73,10 @@ export class CatalogCard {
   @Prop({ type: String, default: null })
   categoria: string | null;
 
+  /** True si la habilidad de la carta aún NO tiene lógica de juego implementada. */
+  @Prop({ default: false })
+  logica_pendiente: boolean;
+
   @Prop({ default: true })
   available_to_common: boolean;
 }

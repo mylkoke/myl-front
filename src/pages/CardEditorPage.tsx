@@ -63,6 +63,8 @@ const EMPTY_FORM: CardFormData = {
   cantidadEdicion: 0,
   expansion: '',
   raza: '',
+  // Las cartas nuevas nacen con la lógica pendiente hasta que se implementa.
+  logicaPendiente: true,
 };
 
 function asCardInPlay(card: Card): CardInPlay {
@@ -155,6 +157,7 @@ export function CardEditorPage() {
       cantidadEdicion: card.cantidadEdicion ?? 0,
       expansion: card.expansion ?? '',
       raza: card.raza ?? '',
+      logicaPendiente: card.logicaPendiente ?? false,
     });
     updateLocalImage(null);
     setFormOpen(true);
@@ -473,7 +476,18 @@ export function CardEditorPage() {
         <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-3">
           {visibleCatalog.map((card) => (
             <div key={card.id} className="flex flex-col items-center gap-1.5">
-              <CardView card={asCardInPlay(card)} size="sm" onClick={() => openEdit(card)} />
+              <div className="relative">
+                {/* ⚠️ habilidad sin lógica de juego implementada */}
+                {card.logicaPendiente && (
+                  <div
+                    className="absolute -top-1.5 -left-1.5 z-20 bg-amber-500 text-black text-[9px] font-black rounded-full w-5 h-5 flex items-center justify-center shadow border border-amber-300"
+                    title="Lógica pendiente: la habilidad de esta carta aún no está programada"
+                  >
+                    ⚠
+                  </div>
+                )}
+                <CardView card={asCardInPlay(card)} size="sm" onClick={() => openEdit(card)} />
+              </div>
               <div className="flex gap-1 w-full">
                 <button
                   onClick={() => openEdit(card)}
@@ -827,6 +841,19 @@ export function CardEditorPage() {
               </div>
             );
           })}
+
+          {/* Marcador de estado: la lógica de la habilidad aún no existe */}
+          <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none bg-slate-800/60 border border-slate-700 rounded-md px-3 py-2">
+            <input
+              type="checkbox"
+              checked={form.logicaPendiente}
+              onChange={(e) => setForm((f) => ({ ...f, logicaPendiente: e.target.checked }))}
+              className="accent-amber-500"
+            />
+            <span>
+              ⚠️ Lógica pendiente — la habilidad de esta carta aún no está programada
+            </span>
+          </label>
 
           <Button
             variant="primary"

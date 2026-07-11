@@ -54,6 +54,8 @@ export interface Card {
   /** Habilidades con reglas especiales, p.ej. 'maquinaria' en armas */
   habilidadesEspeciales?: SpecialAbility[];
   expansion?: string;
+  /** True si la habilidad de la carta aún no tiene lógica de juego (no 100% jugable). */
+  logicaPendiente?: boolean;
 }
 
 export interface CardInPlay extends Card {

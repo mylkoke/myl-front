@@ -22,6 +22,7 @@ export interface ServerCard {
   image_url: string;
   categoria: string | null;
   available_to_common: boolean;
+  logica_pendiente?: boolean;
 }
 
 export function toCard(raw: ServerCard): Card {
@@ -43,6 +44,7 @@ export function toCard(raw: ServerCard): Card {
     raza: raw.raza ?? undefined,
     habilidadesEspeciales: raw.special_abilities,
     expansion: raw.expansion ?? undefined,
+    logicaPendiente: raw.logica_pendiente ?? false,
   };
 }
 
@@ -64,6 +66,8 @@ export interface CardFormData {
   expansion: string;
   /** Raza del aliado (p.ej. "Patriota", "Caudillo") */
   raza: string;
+  /** La habilidad aún no tiene lógica de juego implementada. */
+  logicaPendiente: boolean;
 }
 
 function toServerPayload(data: CardFormData) {
@@ -81,6 +85,7 @@ function toServerPayload(data: CardFormData) {
     cantidad_edicion: data.cantidadEdicion,
     ...(data.expansion.trim() ? { expansion: data.expansion.trim() } : {}),
     ...(data.raza.trim() ? { raza: data.raza.trim() } : {}),
+    logica_pendiente: data.logicaPendiente,
   };
 }
 
