@@ -32,10 +32,26 @@ interface SmallZoneProps {
   dataFx?: string;
   /** Contorno dorado: la zona contiene cartas con acciones disponibles. */
   highlight?: boolean;
+  /** Muestra el desglose de cartas por tipo (mini-badges de color). */
+  showTypeCounts?: boolean;
 }
 
-function SmallZone({ label, letter, letterColor, cards, onInspect, title, dataFx, highlight = false }: SmallZoneProps) {
+/** Colores de los mini-badges por tipo (mismo código de color que las cartas). */
+const TYPE_BADGE_COLORS: Record<string, { cls: string; label: string }> = {
+  aliado: { cls: 'bg-blue-600', label: 'Aliados' },
+  totem: { cls: 'bg-emerald-600', label: 'Tótems' },
+  arma: { cls: 'bg-red-600', label: 'Armas' },
+  talisman: { cls: 'bg-purple-600', label: 'Talismanes' },
+  oro: { cls: 'bg-yellow-500 text-black', label: 'Oros' },
+};
+
+function SmallZone({ label, letter, letterColor, cards, onInspect, title, dataFx, highlight = false, showTypeCounts = false }: SmallZoneProps) {
   const top = cards.at(-1);
+  const typeCounts = showTypeCounts
+    ? Object.entries(TYPE_BADGE_COLORS)
+        .map(([tipo, meta]) => ({ tipo, meta, count: cards.filter((c) => c.tipo === tipo).length }))
+        .filter((t) => t.count > 0)
+    : [];
 
   return (
     <div
@@ -67,6 +83,21 @@ function SmallZone({ label, letter, letterColor, cards, onInspect, title, dataFx
         {cards.length > 1 && (
           <div className="absolute -top-1.5 -right-1.5 bg-slate-700 text-white text-[9px] font-bold rounded-full w-5 h-5 flex items-center justify-center shadow">
             {cards.length}
+          </div>
+        )}
+
+        {/* Desglose por tipo: columna de mini-badges en el borde derecho */}
+        {typeCounts.length > 0 && (
+          <div className="absolute -right-2 top-4 flex flex-col gap-0.5 z-10">
+            {typeCounts.map(({ tipo, meta, count }) => (
+              <div
+                key={tipo}
+                title={`${meta.label}: ${count}`}
+                className={`${meta.cls} text-white text-[8px] font-bold rounded-full min-w-4 h-4 px-0.5 flex items-center justify-center shadow border border-black/30`}
+              >
+                {count}
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -264,7 +295,7 @@ export function SideZones({ player, playerId, isOpponent = false }: SideZonesPro
           </div>
           <SmallZone letter="+" letterColor="text-slate-300" label="Cementerio"
             cards={player.graveyard} onInspect={inspect('graveyard')} title="+ — Cementerio"
-            dataFx={`grave-${playerId}`} highlight={playableFromGraveyard} />
+            dataFx={`grave-${playerId}`} highlight={playableFromGraveyard} showTypeCounts />
         </div>
 
         {/* Row 3: O — Oros (zona especial) | D — Destierro */}

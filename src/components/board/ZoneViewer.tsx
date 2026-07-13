@@ -27,9 +27,32 @@ interface ZoneViewerProps {
  * decide si abrirlo (ver `canInspectZone` en SideZones). Una habilidad o
  * habilidad especial de carta podrá habilitar mirar zonas del oponente.
  */
+const TYPE_LABELS: Record<string, string> = {
+  aliado: 'Aliados',
+  totem: 'Tótems',
+  arma: 'Armas',
+  talisman: 'Talismanes',
+  oro: 'Oros',
+};
+
+const TYPE_CHIP_COLORS: Record<string, string> = {
+  aliado: 'bg-blue-500/20 border-blue-400 text-blue-300',
+  totem: 'bg-emerald-500/20 border-emerald-400 text-emerald-300',
+  arma: 'bg-red-500/20 border-red-400 text-red-300',
+  talisman: 'bg-purple-500/20 border-purple-400 text-purple-300',
+  oro: 'bg-yellow-500/20 border-yellow-400 text-yellow-300',
+};
+
 export function ZoneViewer({ isOpen, onClose, title, letter, cards, detailAction, isHighlighted }: ZoneViewerProps) {
   const [detailCard, setDetailCard] = useState<CardInPlay | null>(null);
+  const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const action = detailCard ? detailAction?.(detailCard) ?? null : null;
+
+  // Desglose por tipo: chips con contador que además filtran la grilla.
+  const typeCounts = Object.keys(TYPE_LABELS)
+    .map((tipo) => ({ tipo, count: cards.filter((c) => c.tipo === tipo).length }))
+    .filter((t) => t.count > 0);
+  const visibleCards = typeFilter ? cards.filter((c) => c.tipo === typeFilter) : cards;
 
   return (
     <>
@@ -43,9 +66,39 @@ export function ZoneViewer({ isOpen, onClose, title, letter, cards, detailAction
             No hay cartas en esta zona.
           </p>
         ) : (
+          <>
+            {/* Desglose por tipo — chips que filtran la grilla al tocarlos */}
+            {typeCounts.length > 1 && (
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {typeCounts.map(({ tipo, count }) => {
+                  const active = typeFilter === tipo;
+                  return (
+                    <button
+                      key={tipo}
+                      onClick={() => setTypeFilter(active ? null : tipo)}
+                      className={[
+                        'px-2 py-1 rounded-full text-[11px] font-medium border transition-all',
+                        TYPE_CHIP_COLORS[tipo],
+                        active ? 'ring-1 ring-white/60' : 'opacity-80 hover:opacity-100',
+                      ].join(' ')}
+                    >
+                      {TYPE_LABELS[tipo]} <b>{count}</b>
+                    </button>
+                  );
+                })}
+                {typeFilter && (
+                  <button
+                    onClick={() => setTypeFilter(null)}
+                    className="px-2 py-1 rounded-full text-[11px] text-slate-400 hover:text-white underline"
+                  >
+                    Ver todas
+                  </button>
+                )}
+              </div>
+            )}
           <div className="grid grid-cols-[repeat(auto-fill,minmax(84px,1fr))] gap-2 max-h-[60vh] overflow-y-auto pr-1">
             {/* Se muestran en orden de llegada; la última carta es la de más arriba */}
-            {cards.map((card, i) => (
+            {visibleCards.map((card, i) => (
               <div key={card.instanceId} className="relative">
                 {/* Marco dorado: carta con acción disponible desde esta zona */}
                 {isHighlighted?.(card) && (
@@ -58,6 +111,7 @@ export function ZoneViewer({ isOpen, onClose, title, letter, cards, detailAction
               </div>
             ))}
           </div>
+          </>
         )}
       </Modal>
 
