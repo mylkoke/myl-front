@@ -8,6 +8,59 @@
 > y §13 (flujo paso a paso para implementar la habilidad de una carta).
 > Leerla SIEMPRE antes de trabajar en habilidades de cartas.
 
+## Qué significa "agregar cartas" (modelo de colaboración)
+
+Estamos digitalizando la colección física de MYL de Koke, carta por carta,
+convirtiendo el texto impreso de cada una en mecánicas jugables reales. No es
+solo meter datos: **cada carta nueva puede introducir reglas de juego nuevas**
+(keywords, triggers, efectos con objetivo, ventanas de respuesta…). El reparto
+de roles es fijo:
+
+- **Koke** crea la carta en el editor web (foto escaneada, stats, texto de
+  habilidad, habilidades especiales que ya existan) y explica en el chat cómo
+  funciona cada habilidad nueva, con sus matices de reglas.
+- **Claude** descompone el texto en habilidades con código, implementa la
+  mecánica, la asigna a la carta en Atlas y despliega. Ante ambigüedades de
+  reglas (¿afecta a ambos jugadores?, ¿una vez por turno?, ¿incluye a la
+  propia carta?) se pregunta a Koke — él es la autoridad de las reglas.
+
+Cómo descomponer el texto de una carta (regla canónica):
+- **Negrita en la carta física = habilidad especial** (keyword transversal,
+  `categoria: 'especial'`): Furia, Relámpago, Imbloqueable, Única, Orbe…
+- **Texto normal = restricciones y habilidades de carta**
+  (`categoria: 'carta'`): cada una recibe un code snake_case descriptivo
+  (p.ej. `botar3_destruye`, `oro_robar_descartar`) aunque la carta impresa
+  no le dé nombre. Ambas categorías se guardan igual en
+  `habilidadesEspeciales[]` de la carta; la distinción es de catálogo/UI.
+- Cada habilidad lleva `tipos` (a qué tipos de carta aplica) para que el
+  editor filtre los chips por tipo.
+
+Patrones de implementación ya construidos (reutilizarlos, no reinventar):
+- **Guards/predicados** en `gameRules.ts` (`hasX(card)`) + constantes de
+  costes. Guards "obligatorios para efectos futuros": `annulBlockReason`,
+  `cannotLeavePlay`, `hasInmunidadTalismanes`, `isProtectedFromAnnulment`.
+- **`effectiveForce(ally, owner, players)`**: única fuente de verdad de la
+  fuerza (debilitado → 0; `fuerza_inmutable` → impresa; `fuerza1_no_caudillos`
+  → 1; si no, base + arma + temporales + buff Patriota). Toda mecánica de
+  fuerza se integra AHÍ.
+- **Targeting en tablero** (`targetingStore`): marco rojo pulsante
+  (debilitar/destruir) o dorado (intercambio de control / seleccionables);
+  banner superior con Cancelar.
+- **Decisiones al entrar en juego**: estado `pending*` en `GameState`
+  (sincronizado online) + modal en `GameBoard` (ej. `pendingShuffleChoice`,
+  `pendingSwapChoice`, `pendingDiscard`).
+- **Ventana de respuesta** (`responseWindow`, 10 s tras jugar aliado/talismán,
+  siempre): talismanes `anular_respuesta` anulan → zona Removidas + robo.
+- **Acciones desde zonas** (`ZoneViewer.detailAction` + zona dorada
+  `SmallZone.highlight`): oros activables, jugar desde Cementerio/Destierro.
+- **Velocidad de respuesta**: `relampago`/`instantaneo` ignoran turno/fase en
+  `canPlayCard`; sus acciones online van con `ownerGated` (gate de asiento,
+  no de turno) en `useGameActions`.
+- **Límite "una vez por turno"**: `allyAbilityUsedThisTurn` /
+  `weaponAbilityUsedThisTurn`, o el propio ciclo de zonas (oros pagados).
+- Duraciones "hasta la Fase Final" expiran en `endTurn`
+  (`weakenedAllies`, `weaponTempBonuses`, `talismanGold`).
+
 ## Flujo de cartas nuevas (resumen; detalle en JARVIS §13)
 
 1. Koke crea la carta en el editor web de producción (https://mylgame.netlify.app);
