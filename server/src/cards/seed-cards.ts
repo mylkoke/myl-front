@@ -208,6 +208,22 @@ export const SEED_ABILITIES = [
     tipos: ['aliado'],
   },
   {
+    code: 'pagar2_bota6',
+    nombre: 'Pagar 2: rival bota 6',
+    descripcion: 'En tu Vigilia, una vez por turno, puedes pagar 2 Oros para que el oponente bote 6 cartas de su Mazo Castillo al Cementerio — a menos que responda en la ventana de 10 s con una carta que evite el efecto.',
+    implemented: true,
+    categoria: 'carta',
+    tipos: ['aliado'],
+  },
+  {
+    code: 'nombrar_raza_suprime',
+    nombre: 'Nombrar raza: suprimir habilidades',
+    descripcion: 'Una vez por turno, nombra una raza: todos los demás Aliados que no sean de esa raza pierden sus habilidades hasta la Fase Final.',
+    implemented: true,
+    categoria: 'carta',
+    tipos: ['aliado'],
+  },
+  {
     code: 'anulado_fuerza3',
     nombre: 'Anulado: +3 a tus aliados',
     descripcion: 'Si esta carta es anulada, los Aliados que controle su propietario ganan +3 a la Fuerza hasta la Fase Final (el efecto se dispara desde fuera de la mesa al resolverse la anulación).',

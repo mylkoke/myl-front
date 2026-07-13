@@ -39,7 +39,13 @@ import {
   MILL_DESTROY_COST,
   SHUFFLE_DRAW_COUNT,
   isBasicGold,
+  hasMillGoldAbility,
+  hasRaceSuppress,
   hasWeakenAbility,
+  abilityUseKey,
+  isInstantTalisman,
+  MILL_GOLD_AMOUNT,
+  MILL_GOLD_COST,
   TALISMAN_RECYCLE_DISCOUNT,
   WEAKEN_GOLD_COST,
   isHandOnly,
@@ -86,12 +92,23 @@ function buildInitialPlayer(id: PlayerId, name: string, rawDeck: Card[]): Player
     weaponAbilityUsedThisTurn: [],
     allyAbilityUsedThisTurn: [],
     weakenedAllies: [],
+    suppressedAbilities: {},
     life: deck.length,
     goldCount: initialGold ? 1 : 0,
     talismanGold: 0,
     drawnThisTurn: false,
     goldSpentThisTurn: false,
   };
+}
+
+/** Restaura las habilidades suprimidas por 'nombrar_raza_suprime' (endTurn). */
+function restoreAbilities(
+  cards: CardInPlay[],
+  suppressed: Record<string, string[]>,
+): CardInPlay[] {
+  return cards.map((c) =>
+    suppressed[c.instanceId] ? { ...c, habilidadesEspeciales: suppressed[c.instanceId] } : c
+  );
 }
 
 export function buildInitialState(
@@ -260,6 +277,23 @@ interface GameActions {
   passResponse: (playerId: PlayerId) => void;
   /** Cierra la ventana de respuesta si ya expiró (idempotente). */
   closeResponseWindow: () => void;
+  /**
+   * 'pagar2_bota6' (Luis Carrera SP): en tu Vigilia, 1 vez por turno, paga 2
+   * oros → abre ventana de efecto de 10 s; si el rival no responde, bota 6
+   * cartas de su Mazo Castillo al Cementerio.
+   */
+  activateMillGold: (sourceInstanceId: string, playerId: PlayerId) => void;
+  /** Resuelve el efecto de una ventana de efecto al cerrarse sin respuesta. */
+  resolveWindowEffect: (
+    effect: NonNullable<NonNullable<GameState['responseWindow']>['effect']>,
+    sourceName: string,
+  ) => void;
+  /**
+   * 'nombrar_raza_suprime' (Luis Carrera SP): 1 vez por turno, nombra una
+   * raza — los demás aliados que no sean de esa raza pierden sus habilidades
+   * hasta la Fase Final.
+   */
+  chooseRaceSuppress: (sourceInstanceId: string, raza: string, playerId: PlayerId) => void;
   /** Replace the whole game state (online sync). */
   hydrateState: (state: GameState) => void;
   addLog: (msg: string, type?: GameLogEntry['type']) => void;
@@ -311,10 +345,15 @@ export const useGameStore = create<GameStore>()(
         const { players, turn, responseWindow } = get();
         const player = players[playerId];
 
-        if (responseWindow) {
+        // Durante una ventana de respuesta, solo el RESPONDEDOR puede jugar
+        // cartas a velocidad de respuesta ('instantaneo' / 'relampago') —
+        // p.ej. una carta que evite un efecto pendiente.
+        const instantSpeed = isInstantTalisman(card) || hasRelampago(card);
+        if (responseWindow && !(instantSpeed && playerId === responseWindow.responderId)) {
           get().addLog('Espera: hay una ventana de respuesta abierta.', 'error');
           return;
         }
+        const windowWasActive = !!responseWindow;
         const { allowed, reason } = canPlayCard(card, player, turn);
         if (!allowed) {
           get().addLog(reason ?? 'No puedes jugar esa carta', 'error');
@@ -435,7 +474,9 @@ export const useGameStore = create<GameStore>()(
 
         // ── Ventana de respuesta: tras jugar un Aliado o Talismán, el
         // oponente tiene 10 s para responder con un talismán de anulación.
-        if (!get().isGameOver && (card.tipo === 'aliado' || card.tipo === 'talisman')) {
+        // (No se anidan ventanas: si esta carta se jugó DENTRO de una
+        // ventana, la ventana original sigue su curso.)
+        if (!windowWasActive && !get().isGameOver && (card.tipo === 'aliado' || card.tipo === 'talisman')) {
           const responderId: PlayerId = playerId === 'player' ? 'opponent' : 'player';
           set({
             responseWindow: {
@@ -1086,6 +1127,10 @@ export const useGameStore = create<GameStore>()(
               talismanGold: 0,
               // 'debilitar_aliado' dura "hasta la Fase Final": expira aquí.
               weakenedAllies: [],
+              // 'nombrar_raza_suprime': restaurar habilidades suprimidas.
+              defenseField: restoreAbilities(updatedCurrent.defenseField, updatedCurrent.suppressedAbilities),
+              attackField: restoreAbilities(updatedCurrent.attackField, updatedCurrent.suppressedAbilities),
+              suppressedAbilities: {},
             },
             [nextId]: {
               ...next,
@@ -1096,10 +1141,15 @@ export const useGameStore = create<GameStore>()(
               weaponAbilityUsedThisTurn: [],
               allyAbilityUsedThisTurn: [],
               weakenedAllies: [],
+              suppressedAbilities: {},
               // Los aliados que entraron el turno anterior ya llevan en juego
               // desde esta Agrupación: pueden atacar este turno.
-              defenseField: next.defenseField.map((c) => ({ ...c, summonedThisTurn: false })),
-              attackField: next.attackField.map((c) => ({ ...c, summonedThisTurn: false })),
+              defenseField: restoreAbilities(next.defenseField, next.suppressedAbilities).map(
+                (c) => ({ ...c, summonedThisTurn: false })
+              ),
+              attackField: restoreAbilities(next.attackField, next.suppressedAbilities).map(
+                (c) => ({ ...c, summonedThisTurn: false })
+              ),
             },
           },
         }));
@@ -1740,15 +1790,167 @@ export const useGameStore = create<GameStore>()(
       passResponse: (playerId) => {
         const { responseWindow } = get();
         if (!responseWindow || playerId !== responseWindow.responderId) return;
+        const effect = responseWindow.effect;
         set({ responseWindow: null });
         get().addLog(`${get().players[playerId].name} no responde.`, 'system');
+        if (effect) get().resolveWindowEffect(effect, responseWindow.cardName);
       },
 
       closeResponseWindow: () => {
         const { responseWindow } = get();
         if (!responseWindow || Date.now() < responseWindow.expiresAt) return;
+        const effect = responseWindow.effect;
         set({ responseWindow: null });
         get().addLog('Ventana de respuesta cerrada.', 'system');
+        if (effect) get().resolveWindowEffect(effect, responseWindow.cardName);
+      },
+
+      // Resuelve el efecto de una ventana de EFECTO al cerrarse sin respuesta.
+      resolveWindowEffect: (effect, sourceName) => {
+        if (effect.type === 'mill') {
+          const target = get().players[effect.targetPlayerId];
+          const milled = Math.min(effect.amount, target.deck.length);
+          if (milled <= 0) return;
+          const lost = target.deck.slice(0, milled).map(createCardInPlay);
+          set((s) => {
+            const t = s.players[effect.targetPlayerId];
+            return {
+              players: {
+                ...s.players,
+                [effect.targetPlayerId]: {
+                  ...t,
+                  deck: t.deck.slice(milled),
+                  graveyard: [...t.graveyard, ...lost],
+                  life: t.deck.length - milled,
+                },
+              },
+            };
+          });
+          get().addLog(
+            `${sourceName}: ${target.name} bota ${milled} carta(s) de su Mazo Castillo al Cementerio.`,
+            'combat'
+          );
+          const { isOver, winnerId } = checkGameOver(get().players);
+          if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
+        }
+      },
+
+      activateMillGold: (sourceInstanceId, playerId) => {
+        const { players, turn, combat, responseWindow, isGameOver } = get();
+        if (isGameOver || combat || responseWindow) return;
+        const player = players[playerId];
+        if (turn.currentPlayer !== playerId || turn.phase !== 'vigilia') {
+          get().addLog('Esta habilidad solo puede activarse en tu Vigilia.', 'error');
+          return;
+        }
+        const source = [...player.defenseField, ...player.attackField].find(
+          (c) => c.instanceId === sourceInstanceId
+        );
+        if (!source || !hasMillGoldAbility(source)) return;
+        const useKey = abilityUseKey(sourceInstanceId, 'pagar2_bota6');
+        if (player.allyAbilityUsedThisTurn.includes(useKey)) {
+          get().addLog('Esta habilidad ya fue usada este turno.', 'error');
+          return;
+        }
+        if (player.goldCount < MILL_GOLD_COST) {
+          get().addLog(`Necesitas ${MILL_GOLD_COST} oros para activar esta habilidad.`, 'error');
+          return;
+        }
+
+        // Pago automático de 2 oros y apertura de la ventana de efecto: el
+        // rival tiene 10 s para responder antes de que el botado se resuelva.
+        const responderId: PlayerId = playerId === 'player' ? 'opponent' : 'player';
+        set((s) => {
+          const p = s.players[playerId];
+          const paid = p.gold.slice(p.gold.length - MILL_GOLD_COST);
+          const remaining = p.gold.slice(0, p.gold.length - MILL_GOLD_COST);
+          return {
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                gold: remaining,
+                goldPaid: [...p.goldPaid, ...paid],
+                goldCount: remaining.length,
+                goldSpentThisTurn: true,
+                allyAbilityUsedThisTurn: [...p.allyAbilityUsedThisTurn, useKey],
+              },
+            },
+            responseWindow: {
+              cardInstanceId: sourceInstanceId,
+              cardName: source.nombre,
+              cardCoste: source.coste,
+              cardOwnerId: playerId,
+              responderId,
+              expiresAt: Date.now() + RESPONSE_WINDOW_MS,
+              effect: { type: 'mill', amount: MILL_GOLD_AMOUNT, targetPlayerId: responderId },
+            },
+          };
+        });
+        get().addLog(
+          `${source.nombre}: ${player.name} paga ${MILL_GOLD_COST} oros — ${players[responderId].name} botará ${MILL_GOLD_AMOUNT} cartas si no responde.`,
+          'action'
+        );
+      },
+
+      chooseRaceSuppress: (sourceInstanceId, raza, playerId) => {
+        const { players, turn, combat, responseWindow, isGameOver } = get();
+        if (isGameOver || combat || responseWindow) return;
+        const player = players[playerId];
+        if (turn.currentPlayer !== playerId || turn.phase !== 'vigilia') {
+          get().addLog('Esta habilidad solo puede activarse en tu Vigilia.', 'error');
+          return;
+        }
+        const source = [...player.defenseField, ...player.attackField].find(
+          (c) => c.instanceId === sourceInstanceId
+        );
+        if (!source || !hasRaceSuppress(source)) return;
+        const useKey = abilityUseKey(sourceInstanceId, 'nombrar_raza_suprime');
+        if (player.allyAbilityUsedThisTurn.includes(useKey)) {
+          get().addLog('Esta habilidad ya fue usada este turno.', 'error');
+          return;
+        }
+
+        // Todos los DEMÁS aliados que no sean de la raza nombrada pierden sus
+        // habilidades hasta la Fase Final (se restauran en endTurn).
+        let affected = 0;
+        set((s) => {
+          const patch = {} as Record<PlayerId, PlayerState>;
+          for (const pid of ['player', 'opponent'] as PlayerId[]) {
+            const p = s.players[pid];
+            const suppressed = { ...p.suppressedAbilities };
+            const strip = (c: CardInPlay): CardInPlay => {
+              if (
+                c.instanceId === sourceInstanceId ||
+                c.raza === raza ||
+                (c.habilidadesEspeciales?.length ?? 0) === 0
+              ) {
+                return c;
+              }
+              suppressed[c.instanceId] = c.habilidadesEspeciales!;
+              affected++;
+              return { ...c, habilidadesEspeciales: [] };
+            };
+            patch[pid] = {
+              ...p,
+              defenseField: p.defenseField.map(strip),
+              attackField: p.attackField.map(strip),
+              suppressedAbilities: suppressed,
+            };
+          }
+          patch[playerId] = {
+            ...patch[playerId],
+            allyAbilityUsedThisTurn: [
+              ...patch[playerId].allyAbilityUsedThisTurn,
+              useKey,
+            ],
+          };
+          return { players: patch };
+        });
+        get().addLog(
+          `${source.nombre}: ${player.name} nombra la raza "${raza}" — ${affected} aliado(s) de otras razas pierden sus habilidades hasta la Fase Final.`,
+          'action'
+        );
       },
 
       weakenAlly: (sourceInstanceId, targetInstanceId, targetOwnerId, playerId) => {

@@ -10,18 +10,24 @@ import { Sword } from 'lucide-react';
 import type { CardSize } from '@/utils/cardSize';
 import { DeckSearchModal } from './DeckSearchModal';
 import {
+  abilityUseKey,
   effectiveForce,
   hasCaudilloSummon,
   hasMillDestroy,
+  hasMillGoldAbility,
+  hasRaceSuppress,
   hasTalismanRecycle,
   hasWeakenAbility,
   isSummonableByCaudillo,
   strengthLockedFor,
   CAUDILLO_SUMMON_GOLD_COST,
   MILL_DESTROY_COST,
+  MILL_GOLD_AMOUNT,
+  MILL_GOLD_COST,
   TALISMAN_RECYCLE_DISCOUNT,
   WEAKEN_GOLD_COST,
 } from '@/utils/gameRules';
+import { Modal } from '@/components/ui/Modal';
 import { useTargetingStore } from '@/store/targetingStore';
 
 interface AllySlotProps {
@@ -35,8 +41,10 @@ interface AllySlotProps {
 export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'md' }: AllySlotProps) {
   const [detailCard, setDetailCard] = useState<CardInPlay | null>(null);
   const [deckSearchOpen, setDeckSearchOpen] = useState(false);
-  const { equipWeapon, summonCaudilloFromDeck, weakenAlly, millDestroyAlly, swapControl, playRecycledTalisman } = useGameActions();
+  const { equipWeapon, summonCaudilloFromDeck, weakenAlly, millDestroyAlly, swapControl,
+    playRecycledTalisman, activateMillGold, chooseRaceSuppress } = useGameActions();
   const [recycleOpen, setRecycleOpen] = useState(false);
+  const [razaPickerOpen, setRazaPickerOpen] = useState(false);
   const turn   = useGameStore((s) => s.turn);
   const combat = useGameStore((s) => s.combat);
   const player = useGameStore((s) => s.players[playerId]);
@@ -104,6 +112,46 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
     !combat &&
     turn.phase === 'vigilia' &&
     player.deck.length >= MILL_DESTROY_COST;
+
+  // 'pagar2_bota6' y 'nombrar_raza_suprime' (Luis Carrera SP): dos
+  // habilidades activadas en la misma carta → botones múltiples en el detalle.
+  const responseWindow = useGameStore((s) => s.responseWindow);
+  const canActivateBase = isMyTurn && !combat && !responseWindow && turn.phase === 'vigilia';
+  const abilityActions = !isOpponent
+    ? [
+        ...(hasMillGoldAbility(ally)
+          ? [{
+              label: `Pagar ${MILL_GOLD_COST} Oros: el rival bota ${MILL_GOLD_AMOUNT} (10 s para responder)`,
+              enabled:
+                canActivateBase &&
+                player.goldCount >= MILL_GOLD_COST &&
+                !player.allyAbilityUsedThisTurn.includes(abilityUseKey(ally.instanceId, 'pagar2_bota6')),
+              onUse: () => activateMillGold(ally.instanceId, playerId),
+            }]
+          : []),
+        ...(hasRaceSuppress(ally)
+          ? [{
+              label: 'Nombrar raza: los demás pierden sus habilidades',
+              enabled:
+                canActivateBase &&
+                !player.allyAbilityUsedThisTurn.includes(abilityUseKey(ally.instanceId, 'nombrar_raza_suprime')),
+              onUse: () => setRazaPickerOpen(true),
+            }]
+          : []),
+      ]
+    : [];
+
+  // Razas presentes entre los aliados en mesa (ambos jugadores) para nombrar.
+  const boardRazas = useGameStore((s) =>
+    [
+      ...new Set(
+        (['player', 'opponent'] as const)
+          .flatMap((pid) => [...s.players[pid].defenseField, ...s.players[pid].attackField])
+          .map((c) => c.raza)
+          .filter((r): r is string => !!r),
+      ),
+    ].sort((a, b) => a.localeCompare(b)),
+  );
 
   // 'invocacion_caudillo': el aliado puede pagar 3 oros para invocar desde el
   // Mazo Castillo un aliado de su misma raza con coste ≤ 4, 1 vez por turno.
@@ -280,7 +328,42 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
               : `Botar ${MILL_DESTROY_COST} cartas: destruir un aliado`
             : undefined
         }
+        abilityActions={
+          detailCard?.instanceId === ally.instanceId ? abilityActions : undefined
+        }
       />
+
+      {/* 'nombrar_raza_suprime': selector de raza a nombrar */}
+      <Modal
+        isOpen={razaPickerOpen}
+        onClose={() => setRazaPickerOpen(false)}
+        title={`${ally.nombre} — nombrar una raza`}
+      >
+        <p className="text-xs text-slate-400 mb-3">
+          Todos los demás aliados que NO sean de la raza nombrada pierden sus
+          habilidades hasta la Fase Final.
+        </p>
+        {boardRazas.length === 0 ? (
+          <p className="text-center text-slate-500 text-sm py-4">
+            No hay razas entre los aliados en mesa.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {boardRazas.map((r) => (
+              <button
+                key={r}
+                onClick={() => {
+                  setRazaPickerOpen(false);
+                  chooseRaceSuppress(ally.instanceId, r, playerId);
+                }}
+                className="px-3 py-2 rounded-full text-sm font-medium border bg-amber-500/10 border-amber-500/50 text-amber-300 hover:bg-amber-500/25 transition-all"
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+        )}
+      </Modal>
 
       {/* Búsqueda en el Mazo Castillo: solo las cartas elegibles (misma raza,
           coste ≤ 4) aparecen a color y son seleccionables */}

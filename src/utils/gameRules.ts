@@ -245,6 +245,36 @@ export function hasMillDestroy(card: Card): boolean {
   return card.habilidadesEspeciales?.includes('botar3_destruye') ?? false;
 }
 
+/** Cost and mill amount of 'pagar2_bota6' (Luis Carrera SP). */
+export const MILL_GOLD_COST = 2;
+export const MILL_GOLD_AMOUNT = 6;
+
+/**
+ * 'pagar2_bota6' (Luis Carrera SP): in your Vigilia, once per turn, pay 2
+ * golds → the opponent mills 6 cards from their castle deck to the
+ * graveyard, UNLESS they respond first (10 s effect window; a future
+ * "prevent effect" talisman/relámpago card can stop it).
+ */
+export function hasMillGoldAbility(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('pagar2_bota6') ?? false;
+}
+
+/**
+ * 'nombrar_raza_suprime' (Luis Carrera SP): once per turn, name a race —
+ * every OTHER ally that is not of that race loses its abilities until the
+ * Final Phase (their habilidadesEspeciales are stripped and restored at
+ * endTurn via PlayerState.suppressedAbilities).
+ */
+export function hasRaceSuppress(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('nombrar_raza_suprime') ?? false;
+}
+
+/** Per-ability once-per-turn tracking key (instanceId alone is ambiguous
+ *  when a card has several activated abilities). */
+export function abilityUseKey(instanceId: string, code: string): string {
+  return `${instanceId}:${code}`;
+}
+
 /** Temp force bonus granted by 'anulado_fuerza3' when the card is annulled. */
 export const ANNUL_TRIGGER_BONUS = 3;
 

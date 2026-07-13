@@ -474,19 +474,25 @@ export function GameBoard() {
         const secondsLeft = Math.max(0, Math.ceil((responseWindow.expiresAt - nowTick) / 1000));
         const responder = players[responseWindow.responderId];
         const isMyResponse = !isOnline || mySeat === responseWindow.responderId;
+        const effect = responseWindow.effect;
         if (!isMyResponse) {
           return (
             <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 border border-purple-500/40 rounded-full px-4 py-2 flex items-center gap-2 shadow-xl">
               <Loader2 size={13} className="animate-spin text-purple-400" />
               <span className="text-xs text-slate-300">
-                {responder.name} puede responder a {responseWindow.cardName}… ({secondsLeft}s)
+                {effect
+                  ? `${responder.name} puede responder al efecto de ${responseWindow.cardName}… (${secondsLeft}s)`
+                  : `${responder.name} puede responder a ${responseWindow.cardName}… (${secondsLeft}s)`}
               </span>
             </div>
           );
         }
+        // Respuestas jugables: talismanes de anulación (ventana de carta) y,
+        // en ventanas de efecto, también cartas a velocidad de respuesta.
         const responses = responder.hand.filter(
           (c) =>
-            hasAnnulResponse(c) &&
+            (hasAnnulResponse(c) ||
+              (effect && (hasRelampago(c) || (c.tipo === 'talisman' && c.habilidadesEspeciales?.includes('instantaneo'))))) &&
             c.coste <= responder.goldCount + responder.talismanGold,
         );
         return (
@@ -498,7 +504,16 @@ export function GameBoard() {
                     Ventana de respuesta — {secondsLeft}s
                   </div>
                   <p className="text-slate-300 text-xs mt-0.5">
-                    {responder.name}: puedes responder a <b>{responseWindow.cardName}</b>
+                    {effect ? (
+                      <>
+                        Efecto de <b>{responseWindow.cardName}</b>: botarás{' '}
+                        <b>{effect.amount}</b> cartas si no respondes
+                      </>
+                    ) : (
+                      <>
+                        {responder.name}: puedes responder a <b>{responseWindow.cardName}</b>
+                      </>
+                    )}
                   </p>
                 </div>
                 <Button
@@ -517,14 +532,16 @@ export function GameBoard() {
                       card={c}
                       size="sm"
                       onClick={() =>
-                        respondWithAnnul(c.instanceId, responseWindow.responderId)
+                        hasAnnulResponse(c)
+                          ? respondWithAnnul(c.instanceId, responseWindow.responderId)
+                          : playCardAction(c, responseWindow.responderId)
                       }
                     />
                   ))}
                 </div>
               ) : (
                 <p className="text-[11px] text-slate-500 text-center">
-                  No tienes talismanes de respuesta jugables.
+                  No tienes cartas de respuesta jugables.
                 </p>
               )}
             </div>

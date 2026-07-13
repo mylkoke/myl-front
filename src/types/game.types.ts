@@ -56,6 +56,12 @@ export interface PlayerState {
   allyAbilityUsedThisTurn: string[];
   /** instanceIds de aliados con Fuerza 0 hasta la Fase Final ('debilitar_aliado') */
   weakenedAllies: string[];
+  /**
+   * Habilidades suprimidas hasta la Fase Final ('nombrar_raza_suprime'):
+   * key = instanceId, value = habilidadesEspeciales originales a restaurar
+   * en endTurn. Mientras están aquí, la carta tiene habilidadesEspeciales: [].
+   */
+  suppressedAbilities: Record<string, string[]>;
 
   // ── Estado del jugador ─────────────────────────────────────────────────
   life: number;
@@ -148,6 +154,13 @@ export interface GameState {
     responderId: PlayerId;
     /** Epoch ms en que expira la ventana */
     expiresAt: number;
+    /**
+     * Ventana de EFECTO: si está presente, al cerrarse la ventana (timeout o
+     * "No responder") el efecto se RESUELVE automáticamente (p.ej. 'mill':
+     * el objetivo bota `amount` cartas). Sin esto, la ventana es de carta
+     * jugada y cerrarla no hace nada.
+     */
+    effect?: { type: 'mill'; amount: number; targetPlayerId: PlayerId } | null;
   } | null;
 }
 

@@ -28,6 +28,8 @@ export function useGameActions() {
   const resolveShuffleChoice = useGameStore((s) => s.resolveShuffleChoice);
   const resolveSwapChoice = useGameStore((s) => s.resolveSwapChoice);
   const swapControl = useGameStore((s) => s.swapControl);
+  const activateMillGold = useGameStore((s) => s.activateMillGold);
+  const chooseRaceSuppress = useGameStore((s) => s.chooseRaceSuppress);
   const passResponse = useGameStore((s) => s.passResponse);
   const closeResponseWindow = useGameStore((s) => s.closeResponseWindow);
   const weakenAlly = useGameStore((s) => s.weakenAlly);
@@ -116,6 +118,8 @@ export function useGameActions() {
     },
     weakenAlly:    guarded(weakenAlly),
     millDestroyAlly: guarded(millDestroyAlly),
+    activateMillGold: guarded(activateMillGold),
+    chooseRaceSuppress: guarded(chooseRaceSuppress),
     playFromZone:  guarded(playFromZone),
     playRecycledTalisman: guarded(playRecycledTalisman),
     regroupGold:   guarded(regroupGold),

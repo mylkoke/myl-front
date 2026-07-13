@@ -16,6 +16,8 @@ interface CardDetailProps {
   canUseSpecialAbility?: boolean;
   /** Texto del botón de habilidad (por defecto "Usar efecto especial (−1 Oro)"). */
   specialAbilityLabel?: string;
+  /** Cartas con VARIAS habilidades activadas: un botón por acción. */
+  abilityActions?: { label: string; enabled: boolean; onUse: () => void }[];
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -33,7 +35,7 @@ const RARITY_VARIANT: Record<string, 'gold' | 'blue' | 'purple' | 'gray'> = {
   'ultra raro': 'purple',
 };
 
-export function CardDetail({ card, isOpen, onClose, onPlay, canPlay, playLabel, onUseSpecialAbility, canUseSpecialAbility, specialAbilityLabel }: CardDetailProps) {
+export function CardDetail({ card, isOpen, onClose, onPlay, canPlay, playLabel, onUseSpecialAbility, canUseSpecialAbility, specialAbilityLabel, abilityActions }: CardDetailProps) {
   const [imageError, setImageError] = useState(false);
 
   if (!card) return null;
@@ -132,8 +134,24 @@ export function CardDetail({ card, isOpen, onClose, onPlay, canPlay, playLabel, 
       </div>
 
       {/* Botones de acción */}
-      {(onPlay || onUseSpecialAbility) && (
+      {(onPlay || onUseSpecialAbility || (abilityActions?.length ?? 0) > 0) && (
         <div className="mt-6 pt-4 border-t border-white/10 flex flex-col gap-2">
+          {abilityActions?.map((action) => (
+            <button
+              key={action.label}
+              onClick={() => { action.onUse(); onClose(); }}
+              disabled={!action.enabled}
+              className={[
+                'w-full py-3 rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2',
+                action.enabled
+                  ? 'bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/30'
+                  : 'bg-slate-700 text-slate-500 cursor-not-allowed',
+              ].join(' ')}
+            >
+              <Zap size={14} />
+              {action.label}
+            </button>
+          ))}
           {onUseSpecialAbility && (
             <button
               onClick={() => { onUseSpecialAbility(); onClose(); }}
