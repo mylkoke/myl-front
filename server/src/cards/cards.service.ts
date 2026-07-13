@@ -27,21 +27,17 @@ export class CardsService implements OnModuleInit {
     @InjectModel(CatalogCard.name) private readonly model: Model<CatalogCardDocument>,
   ) {}
 
-  /** Seed the global catalog; also inserts any cards missing by nombre. */
+  /**
+   * Seed the global catalog ONLY on a fresh install (empty collection).
+   * No re-inserta cartas faltantes: el catálogo se gestiona desde el Modo
+   * editor y las cartas borradas deben permanecer borradas entre reinicios.
+   */
   async onModuleInit() {
     if (!env.mongodbUri) return;
     const count = await this.model.estimatedDocumentCount();
     if (count === 0) {
       await this.model.insertMany(SEED_CARDS);
       this.logger.log(`Catalog seeded with ${SEED_CARDS.length} cards`);
-      return;
-    }
-    // Upsert: add cards present in seed but not yet in the DB (by nombre)
-    const existing = await this.model.distinct('nombre');
-    const missing = SEED_CARDS.filter((c) => !existing.includes(c.nombre));
-    if (missing.length > 0) {
-      await this.model.insertMany(missing);
-      this.logger.log(`Catalog: added ${missing.length} missing card(s): ${missing.map((c) => c.nombre).join(', ')}`);
     }
   }
 
