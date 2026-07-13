@@ -208,6 +208,22 @@ export const SEED_ABILITIES = [
     tipos: ['aliado'],
   },
   {
+    code: 'anulado_fuerza3',
+    nombre: 'Anulado: +3 a tus aliados',
+    descripcion: 'Si esta carta es anulada, los Aliados que controle su propietario ganan +3 a la Fuerza hasta la Fase Final (el efecto se dispara desde fuera de la mesa al resolverse la anulación).',
+    implemented: true,
+    categoria: 'carta',
+    tipos: ['aliado'],
+  },
+  {
+    code: 'fuerza_por_cementerio',
+    nombre: 'Fuerza por cementerio',
+    descripcion: 'Mientras esta carta esté en juego, los Aliados que controle su propietario ganan +1 a la Fuerza por cada Aliado en el Cementerio de ese jugador (dinámico).',
+    implemented: true,
+    categoria: 'carta',
+    tipos: ['aliado'],
+  },
+  {
     code: 'intercambio_control',
     nombre: 'Intercambio de control',
     descripcion: 'Cuando esta carta entra en juego, puedes intercambiar su control por el de otra carta en juego que no sea Oro (Aliado, Tótem o Arma en mesa del rival). El intercambio dura el resto de la partida: cada carta actúa como si su propietario fuera quien la tiene en su lado del tablero.',

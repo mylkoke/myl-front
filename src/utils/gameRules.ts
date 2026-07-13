@@ -245,6 +245,38 @@ export function hasMillDestroy(card: Card): boolean {
   return card.habilidadesEspeciales?.includes('botar3_destruye') ?? false;
 }
 
+/** Temp force bonus granted by 'anulado_fuerza3' when the card is annulled. */
+export const ANNUL_TRIGGER_BONUS = 3;
+
+/**
+ * 'anulado_fuerza3' (Diego Portales SP): if this card is ANNULLED (e.g. by a
+ * response talisman), its owner's allies gain +3 Force until the Final Phase.
+ * The trigger fires from outside the board, right when the annul resolves.
+ */
+export function hasAnnulTrigger(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('anulado_fuerza3') ?? false;
+}
+
+/**
+ * 'fuerza_por_cementerio' (Diego Portales SP): while this card is on the
+ * board, its controller's allies gain +1 Force per ALLY card in the
+ * controller's graveyard (dynamic; stacks per source card in play).
+ */
+export function hasGraveyardForceBonus(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('fuerza_por_cementerio') ?? false;
+}
+
+/** Total graveyard-scaling bonus an ally receives ('fuerza_por_cementerio'). */
+export function graveyardForceBonus(ally: CardInPlay, owner: PlayerState): number {
+  if (ally.tipo !== 'aliado') return 0;
+  const sources = [...owner.defenseField, ...owner.attackField].filter(
+    hasGraveyardForceBonus,
+  ).length;
+  if (sources === 0) return 0;
+  const alliesInGrave = owner.graveyard.filter((c) => c.tipo === 'aliado').length;
+  return sources * alliesInGrave;
+}
+
 /**
  * 'intercambio_control' (Arturo Prat SP): when this card enters play, its
  * owner MAY exchange its control with any non-gold rival card in play (ally,
@@ -398,7 +430,8 @@ export function effectiveForce(
     ally.fuerza +
     (owner.equippedWeapons[ally.instanceId]?.bonusFuerza ?? 0) +
     (owner.weaponTempBonuses[ally.instanceId] ?? 0) +
-    patriotaBonus(ally, players)
+    patriotaBonus(ally, players) +
+    graveyardForceBonus(ally, owner)
   );
 }
 

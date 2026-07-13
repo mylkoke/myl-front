@@ -18,8 +18,10 @@ import {
   BLOCK_PUNISHMENT_MILL,
   GOLD_TALISMAN_YIELD,
   hasGoldTalismanAbility,
+  ANNUL_TRIGGER_BONUS,
   annulBlockReason,
   controlsPatriota,
+  hasAnnulTrigger,
   effectiveForce,
   hasAnnulResponse,
   RESPONSE_WINDOW_MS,
@@ -1709,6 +1711,28 @@ export const useGameStore = create<GameStore>()(
           `${responder.name} responde con ${responseCard.nombre}: ${target.nombre} es anulada y removida del juego. ${responder.name} roba ${drawCount} carta(s).`,
           'combat'
         );
+
+        // 'anulado_fuerza3' (Diego Portales SP): al ser anulada, se dispara
+        // desde fuera de la mesa — los aliados de su dueño ganan +3 de Fuerza
+        // hasta la Fase Final.
+        if (hasAnnulTrigger(target)) {
+          const ownerId = responseWindow.cardOwnerId;
+          set((s) => {
+            const o = s.players[ownerId];
+            const bonuses = { ...o.weaponTempBonuses };
+            for (const ally of [...o.defenseField, ...o.attackField]) {
+              bonuses[ally.instanceId] = (bonuses[ally.instanceId] ?? 0) + ANNUL_TRIGGER_BONUS;
+            }
+            return {
+              players: { ...s.players, [ownerId]: { ...o, weaponTempBonuses: bonuses } },
+            };
+          });
+          get().addLog(
+            `${target.nombre}: al ser anulada, los aliados de ${owner.name} ganan +${ANNUL_TRIGGER_BONUS} de Fuerza hasta la Fase Final.`,
+            'action'
+          );
+        }
+
         const { isOver, winnerId } = checkGameOver(get().players);
         if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
       },
