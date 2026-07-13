@@ -18,13 +18,14 @@ export function PlayerHand({ cards, playerId, isOpponent = false }: PlayerHandPr
   const { playCard } = useGameActions();
   const turn   = useGameStore((s) => s.turn);
   const player = useGameStore((s) => s.players[playerId]);
+  const allPlayers = useGameStore((s) => s.players);
 
   const handleCardClick = (card: CardInPlay) => {
     if (isOpponent) return;
     setDetailCard(card);
   };
 
-  const canPlay = detailCard ? canPlayCard(detailCard, player, turn).allowed : false;
+  const canPlay = detailCard ? canPlayCard(detailCard, player, turn, allPlayers).allowed : false;
 
   return (
     <>

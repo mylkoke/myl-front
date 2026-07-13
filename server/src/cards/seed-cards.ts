@@ -208,6 +208,14 @@ export const SEED_ABILITIES = [
     tipos: ['aliado'],
   },
   {
+    code: 'nombrar_tipo_sobrecoste',
+    nombre: 'Nombrar tipo: +2 Oros',
+    descripcion: 'Cuando esta carta entra en juego, su dueño nombra un tipo de carta que no sea Oro (Aliado, Arma, Tótem o Talismán). Las cartas del tipo nombrado cuestan 2 Oros adicionales — para ambos jugadores — mientras esta carta esté en la línea de apoyo.',
+    implemented: true,
+    categoria: 'carta',
+    tipos: ['totem'],
+  },
+  {
     code: 'pagar2_bota6',
     nombre: 'Pagar 2: rival bota 6',
     descripcion: 'En tu Vigilia, una vez por turno, puedes pagar 2 Oros para que el oponente bote 6 cartas de su Mazo Castillo al Cementerio — a menos que responda en la ventana de 10 s con una carta que evite el efecto.',

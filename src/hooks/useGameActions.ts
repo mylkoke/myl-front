@@ -2,7 +2,7 @@ import { useGameStore } from '@/store/gameStore';
 import { useOnlineStore } from '@/store/onlineStore';
 import { pushCurrentState } from '@/utils/onlineSync';
 import type { PlayerId } from '@/types/game.types';
-import type { CardInPlay } from '@/types/card.types';
+import type { CardInPlay, CardType } from '@/types/card.types';
 
 /**
  * Single interception point for game actions. In online mode:
@@ -30,6 +30,7 @@ export function useGameActions() {
   const swapControl = useGameStore((s) => s.swapControl);
   const activateMillGold = useGameStore((s) => s.activateMillGold);
   const chooseRaceSuppress = useGameStore((s) => s.chooseRaceSuppress);
+  const resolveTypeChoice = useGameStore((s) => s.resolveTypeChoice);
   const passResponse = useGameStore((s) => s.passResponse);
   const closeResponseWindow = useGameStore((s) => s.closeResponseWindow);
   const weakenAlly = useGameStore((s) => s.weakenAlly);
@@ -110,6 +111,7 @@ export function useGameActions() {
     resolveShuffleChoice: ownerGated<[boolean]>(resolveShuffleChoice),
     // 'intercambio_control' puede resolverse fuera de turno (Relámpago).
     resolveSwapChoice: ownerGated<[boolean]>(resolveSwapChoice),
+    resolveTypeChoice: ownerGated<[CardType]>(resolveTypeChoice),
     swapControl: ownerGated<[string, string, PlayerId]>(swapControl),
     passResponse: ownerGated<[]>(passResponse),
     closeResponseWindow: () => {

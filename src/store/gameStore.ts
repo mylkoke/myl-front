@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import type { GameState, PlayerState, TurnPhase, PlayerId } from '@/types/game.types';
-import type { CardInPlay, Card } from '@/types/card.types';
+import type { CardInPlay, Card, CardType } from '@/types/card.types';
 import { createCardInPlay, createCardsInPlay } from '@/utils/cardFactory';
 import { shuffleDeck, drawCards } from '@/utils/deckUtils';
 import {
@@ -22,6 +22,7 @@ import {
   annulBlockReason,
   controlsPatriota,
   hasAnnulTrigger,
+  effectiveCost,
   effectiveForce,
   hasAnnulResponse,
   RESPONSE_WINDOW_MS,
@@ -36,6 +37,7 @@ import {
   hasRelampago,
   hasShuffleDraw,
   hasTalismanRecycle,
+  hasTypeTax,
   MILL_DESTROY_COST,
   SHUFFLE_DRAW_COUNT,
   isBasicGold,
@@ -145,6 +147,7 @@ export function buildInitialState(
     pendingDiscard: null,
     pendingShuffleChoice: null,
     pendingSwapChoice: null,
+    pendingTypeChoice: null,
     responseWindow: null,
     fxLightning: null,
     gameLog: [
@@ -294,6 +297,12 @@ interface GameActions {
    * hasta la Fase Final.
    */
   chooseRaceSuppress: (sourceInstanceId: string, raza: string, playerId: PlayerId) => void;
+  /**
+   * 'nombrar_tipo_sobrecoste' (Plaza de Armas SP): resuelve el tipo nombrado
+   * al entrar en juego — las cartas de ese tipo cuestan +2 Oros mientras el
+   * tótem esté en la línea de apoyo.
+   */
+  resolveTypeChoice: (tipo: CardType, playerId: PlayerId) => void;
   /** Replace the whole game state (online sync). */
   hydrateState: (state: GameState) => void;
   addLog: (msg: string, type?: GameLogEntry['type']) => void;
@@ -354,11 +363,13 @@ export const useGameStore = create<GameStore>()(
           return;
         }
         const windowWasActive = !!responseWindow;
-        const { allowed, reason } = canPlayCard(card, player, turn);
+        const { allowed, reason } = canPlayCard(card, player, turn, players);
         if (!allowed) {
           get().addLog(reason ?? 'No puedes jugar esa carta', 'error');
           return;
         }
+        // Coste efectivo: impreso + sobrecostes ('nombrar_tipo_sobrecoste')
+        const cost = effectiveCost(card, players);
 
         const withoutCard = player.hand.filter((c) => c.instanceId !== card.instanceId);
         let updated = { ...player, hand: withoutCard };
@@ -376,8 +387,8 @@ export const useGameStore = create<GameStore>()(
 
           // Aliados → línea de defensa
           case 'aliado': {
-            const paid    = player.gold.slice(player.gold.length - card.coste);
-            const remaining = player.gold.slice(0, player.gold.length - card.coste);
+            const paid    = player.gold.slice(player.gold.length - cost);
+            const remaining = player.gold.slice(0, player.gold.length - cost);
             updated = {
               ...updated,
               defenseField: [...player.defenseField, { ...card, summonedThisTurn: true }],
@@ -391,8 +402,8 @@ export const useGameStore = create<GameStore>()(
 
           // Tótems → línea de apoyo (permanente)
           case 'totem': {
-            const paid    = player.gold.slice(player.gold.length - card.coste);
-            const remaining = player.gold.slice(0, player.gold.length - card.coste);
+            const paid    = player.gold.slice(player.gold.length - cost);
+            const remaining = player.gold.slice(0, player.gold.length - cost);
             updated = {
               ...updated,
               supportField: [...player.supportField, card],
@@ -407,8 +418,8 @@ export const useGameStore = create<GameStore>()(
           // Talismanes → efecto inmediato → cementerio
           case 'talisman': {
             // Se pagan primero con oros virtuales 'oro_talismanes' (si hay).
-            const fromVirtual = Math.min(player.talismanGold, card.coste);
-            const fromCards   = card.coste - fromVirtual;
+            const fromVirtual = Math.min(player.talismanGold, cost);
+            const fromCards   = cost - fromVirtual;
             const paid    = player.gold.slice(player.gold.length - fromCards);
             const remaining = player.gold.slice(0, player.gold.length - fromCards);
             updated = {
@@ -436,8 +447,8 @@ export const useGameStore = create<GameStore>()(
               );
               return;
             }
-            const paid    = player.gold.slice(player.gold.length - card.coste);
-            const remaining = player.gold.slice(0, player.gold.length - card.coste);
+            const paid    = player.gold.slice(player.gold.length - cost);
+            const remaining = player.gold.slice(0, player.gold.length - cost);
             updated = {
               ...updated,
               supportField: [...player.supportField, card],
@@ -452,7 +463,7 @@ export const useGameStore = create<GameStore>()(
           }
         }
 
-        const paidGold = card.tipo !== 'oro' && card.coste > 0;
+        const paidGold = card.tipo !== 'oro' && cost > 0;
         set((s) => ({
           players: {
             ...s.players,
@@ -496,6 +507,18 @@ export const useGameStore = create<GameStore>()(
           set({ pendingShuffleChoice: { playerId, cardName: card.nombre } });
         }
 
+        // 'nombrar_tipo_sobrecoste' (Plaza de Armas SP): al entrar en juego,
+        // su dueño nombra un tipo de carta (no Oro) que costará +2 Oros.
+        if (!get().isGameOver && card.tipo === 'totem' && hasTypeTax(card)) {
+          set({
+            pendingTypeChoice: {
+              playerId,
+              cardInstanceId: card.instanceId,
+              cardName: card.nombre,
+            },
+          });
+        }
+
         // 'intercambio_control': al entrar en juego, su dueño decide si
         // intercambia su control con una carta rival no-oro.
         if (!get().isGameOver && card.tipo === 'aliado' && hasControlSwap(card)) {
@@ -523,8 +546,9 @@ export const useGameStore = create<GameStore>()(
         const { players } = get();
         const player = players[playerId];
 
-        if (weapon.coste > player.goldCount) {
-          get().addLog(`Necesitas ${weapon.coste} de oro para equipar ${weapon.nombre}.`, 'error');
+        const weaponCost = effectiveCost(weapon, players);
+        if (weaponCost > player.goldCount) {
+          get().addLog(`Necesitas ${weaponCost} de oro para equipar ${weapon.nombre}.`, 'error');
           return;
         }
 
@@ -535,8 +559,8 @@ export const useGameStore = create<GameStore>()(
 
         set((s) => {
           const p = s.players[playerId];
-          const paid      = p.gold.slice(p.gold.length - weapon.coste);
-          const remaining = p.gold.slice(0, p.gold.length - weapon.coste);
+          const paid      = p.gold.slice(p.gold.length - weaponCost);
+          const remaining = p.gold.slice(0, p.gold.length - weaponCost);
           return {
             players: {
               ...s.players,
@@ -744,15 +768,16 @@ export const useGameStore = create<GameStore>()(
           return;
         }
         const player = players[playerId];
-        if (card.coste > player.goldCount + player.talismanGold) {
-          get().addLog(`Necesitas ${card.coste} de oro para jugar ${card.nombre}.`, 'error');
+        const combatCost = effectiveCost(card, players);
+        if (combatCost > player.goldCount + player.talismanGold) {
+          get().addLog(`Necesitas ${combatCost} de oro para jugar ${card.nombre}.`, 'error');
           return;
         }
 
         const withoutCard = player.hand.filter((c) => c.instanceId !== card.instanceId);
         // Se pagan primero con oros virtuales 'oro_talismanes' (si hay).
-        const fromVirtual = Math.min(player.talismanGold, card.coste);
-        const fromCards   = card.coste - fromVirtual;
+        const fromVirtual = Math.min(player.talismanGold, combatCost);
+        const fromCards   = combatCost - fromVirtual;
         const paid      = player.gold.slice(player.gold.length - fromCards);
         const remaining = player.gold.slice(0, player.gold.length - fromCards);
         const other: PlayerId = playerId === 'player' ? 'opponent' : 'player';
@@ -1337,7 +1362,7 @@ export const useGameStore = create<GameStore>()(
         if (!card || !hasPlayFromGraveyard(card)) return;
 
         // Mismas reglas que jugar desde la mano (turno, fase, coste, líneas).
-        const { allowed, reason } = canPlayCard(card, player, turn);
+        const { allowed, reason } = canPlayCard(card, player, turn, players);
         if (!allowed) {
           get().addLog(reason ?? 'No puedes jugar esa carta ahora.', 'error');
           return;
@@ -1347,8 +1372,9 @@ export const useGameStore = create<GameStore>()(
           return;
         }
 
-        const paid = player.gold.slice(player.gold.length - card.coste);
-        const remaining = player.gold.slice(0, player.gold.length - card.coste);
+        const zoneCost = effectiveCost(card, players);
+        const paid = player.gold.slice(player.gold.length - zoneCost);
+        const remaining = player.gold.slice(0, player.gold.length - zoneCost);
         set((s) => {
           const p = s.players[playerId];
           return {
@@ -1361,7 +1387,7 @@ export const useGameStore = create<GameStore>()(
                 gold: remaining,
                 goldPaid: [...p.goldPaid, ...paid],
                 goldCount: remaining.length,
-                goldSpentThisTurn: card.coste > 0 ? true : p.goldSpentThisTurn,
+                goldSpentThisTurn: zoneCost > 0 ? true : p.goldSpentThisTurn,
               },
             },
             turn: { ...s.turn, cardsPlayedThisTurn: s.turn.cardsPlayedThisTurn + 1 },
@@ -1422,7 +1448,7 @@ export const useGameStore = create<GameStore>()(
         const talisman = player[zone].find((c) => c.instanceId === talismanInstanceId)!;
         if (talisman.tipo !== 'talisman') return;
 
-        const cost = Math.max(0, talisman.coste - TALISMAN_RECYCLE_DISCOUNT);
+        const cost = Math.max(0, effectiveCost(talisman, players) - TALISMAN_RECYCLE_DISCOUNT);
         if (cost > player.goldCount + player.talismanGold) {
           get().addLog(`Necesitas ${cost} de oro para jugar ${talisman.nombre}.`, 'error');
           return;
@@ -1537,6 +1563,33 @@ export const useGameStore = create<GameStore>()(
         );
         const { isOver, winnerId } = checkGameOver(get().players);
         if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
+      },
+
+      resolveTypeChoice: (tipo, playerId) => {
+        const { pendingTypeChoice } = get();
+        if (!pendingTypeChoice || pendingTypeChoice.playerId !== playerId) return;
+        if (tipo === 'oro') return;
+        set((s) => {
+          const p = s.players[playerId];
+          return {
+            pendingTypeChoice: null,
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                supportField: p.supportField.map((c) =>
+                  c.instanceId === pendingTypeChoice.cardInstanceId
+                    ? { ...c, namedType: tipo }
+                    : c
+                ),
+              },
+            },
+          };
+        });
+        get().addLog(
+          `${pendingTypeChoice.cardName}: ${get().players[playerId].name} nombra el tipo "${tipo}" — esas cartas cuestan +2 Oros.`,
+          'action'
+        );
       },
 
       resolveSwapChoice: (accept, playerId) => {
@@ -1683,8 +1736,9 @@ export const useGameStore = create<GameStore>()(
         if (!responseCard || responseCard.tipo !== 'talisman' || !hasAnnulResponse(responseCard)) {
           return;
         }
-        if (responseCard.coste > responder.goldCount + responder.talismanGold) {
-          get().addLog(`Necesitas ${responseCard.coste} de oro para jugar ${responseCard.nombre}.`, 'error');
+        const responseCost = effectiveCost(responseCard, players);
+        if (responseCost > responder.goldCount + responder.talismanGold) {
+          get().addLog(`Necesitas ${responseCost} de oro para jugar ${responseCard.nombre}.`, 'error');
           return;
         }
 
@@ -1709,8 +1763,8 @@ export const useGameStore = create<GameStore>()(
         }
 
         // Pagar el talismán de respuesta (oros virtuales primero) → cementerio.
-        const fromVirtual = Math.min(responder.talismanGold, responseCard.coste);
-        const fromCards = responseCard.coste - fromVirtual;
+        const fromVirtual = Math.min(responder.talismanGold, responseCost);
+        const fromCards = responseCost - fromVirtual;
         const paid = responder.gold.slice(responder.gold.length - fromCards);
         const remainingGold = responder.gold.slice(0, responder.gold.length - fromCards);
 

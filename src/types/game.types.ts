@@ -144,6 +144,12 @@ export interface GameState {
    * no-oro por el resto de la partida. Se sincroniza online.
    */
   pendingSwapChoice: { playerId: PlayerId; cardInstanceId: string; cardName: string } | null;
+  /**
+   * Decisión pendiente de 'nombrar_tipo_sobrecoste' (Plaza de Armas SP): al
+   * entrar en juego, su dueño nombra un tipo de carta que costará +2 Oros.
+   * Se sincroniza online.
+   */
+  pendingTypeChoice: { playerId: PlayerId; cardInstanceId: string; cardName: string } | null;
   responseWindow: {
     /** Carta recién jugada (ya en su zona) que puede ser anulada */
     cardInstanceId: string;

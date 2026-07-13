@@ -55,8 +55,9 @@ export function GameBoard() {
   const pendingDiscard = useGameStore((s) => s.pendingDiscard);
   const responseWindow = useGameStore((s) => s.responseWindow);
   const { discardFromHand, respondWithAnnul, passResponse, closeResponseWindow, resolveShuffleChoice,
-    resolveSwapChoice, playCard: playCardAction } = useGameActions();
+    resolveSwapChoice, resolveTypeChoice, playCard: playCardAction } = useGameActions();
   const pendingSwapChoice = useGameStore((s) => s.pendingSwapChoice);
+  const pendingTypeChoice = useGameStore((s) => s.pendingTypeChoice);
   const startSwap = useTargetingStore((s) => s.startSwap);
   const swapTargeting = useTargetingStore((s) => s.swap);
   const pendingShuffleChoice = useGameStore((s) => s.pendingShuffleChoice);
@@ -548,6 +549,34 @@ export function GameBoard() {
           </div>
         );
       })()}
+
+      {/* ── Decisión de 'nombrar_tipo_sobrecoste' (Plaza de Armas SP) ──── */}
+      {pendingTypeChoice && (!isOnline || mySeat === pendingTypeChoice.playerId) && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
+          <div className="w-full max-w-sm bg-slate-900 border border-emerald-500/40 rounded-2xl p-4 sm:p-6 shadow-2xl text-center">
+            <div className="text-emerald-300 text-xs uppercase tracking-widest font-bold">
+              {pendingTypeChoice.cardName}
+            </div>
+            <p className="text-slate-300 text-sm mt-2 mb-4">
+              Nombra un tipo de carta: costarán <b>+2 Oros</b> mientras este
+              tótem esté en la línea de apoyo.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {(['aliado', 'arma', 'totem', 'talisman'] as const).map((t) => (
+                <Button
+                  key={t}
+                  variant="secondary"
+                  fullWidth
+                  onClick={() => resolveTypeChoice(t, pendingTypeChoice.playerId)}
+                  className="capitalize"
+                >
+                  {t === 'talisman' ? 'Talismán' : t === 'totem' ? 'Tótem' : t}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Decisión de 'intercambio_control' (Arturo Prat SP) ─────────── */}
       {pendingSwapChoice && (!isOnline || mySeat === pendingSwapChoice.playerId) && (

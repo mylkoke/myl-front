@@ -63,6 +63,13 @@ export interface CardInPlay extends Card {
   tapped: boolean;
   attackedThisTurn: boolean;
   /**
+   * Tipo de carta nombrado por 'nombrar_tipo_sobrecoste' (Plaza de Armas SP)
+   * al entrar en juego: las cartas de ese tipo cuestan +2 Oros mientras esta
+   * carta esté en la línea de apoyo. Viaja con la instancia (p.ej. en un
+   * intercambio de control).
+   */
+  namedType?: CardType;
+  /**
    * True el turno en que el aliado entra en juego. Un aliado recién invocado
    * no puede atacar ese mismo turno (debe haber estado desde la Agrupación),
    * salvo que tenga la habilidad especial 'furia'. Se limpia al comenzar el

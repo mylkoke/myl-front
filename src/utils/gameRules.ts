@@ -31,7 +31,9 @@ export function isInstantTalisman(card: Card): boolean {
 export function canPlayCard(
   card: Card,
   player: PlayerState,
-  turn: TurnState
+  turn: TurnState,
+  /** Ambos jugadores: necesario para sobrecostes activos ('nombrar_tipo_sobrecoste'). */
+  players?: Record<PlayerId, PlayerState>,
 ): { allowed: boolean; reason?: string } {
   // 'instantaneo' (talismanes) y 'relampago' (cualquier tipo) se juegan a
   // velocidad de respuesta: ignoran la restricción de turno y fase.
@@ -59,10 +61,11 @@ export function canPlayCard(
   // Los talismanes pueden pagarse también con oros virtuales 'oro_talismanes'.
   const available =
     card.tipo === 'talisman' ? player.goldCount + player.talismanGold : player.goldCount;
-  if (card.coste > available) {
+  const cost = players ? effectiveCost(card, players) : card.coste;
+  if (cost > available) {
     return {
       allowed: false,
-      reason: `Necesitas ${card.coste} de oro (tienes ${available})`,
+      reason: `Necesitas ${cost} de oro (tienes ${available})`,
     };
   }
 
@@ -243,6 +246,34 @@ export const MILL_DESTROY_COST = 3;
  */
 export function hasMillDestroy(card: Card): boolean {
   return card.habilidadesEspeciales?.includes('botar3_destruye') ?? false;
+}
+
+/** Extra cost per active 'nombrar_tipo_sobrecoste' source (Plaza de Armas SP). */
+export const TYPE_TAX_AMOUNT = 2;
+
+/**
+ * 'nombrar_tipo_sobrecoste' (Plaza de Armas SP): when this totem enters
+ * play, its owner names a non-gold card type. Cards of the named type cost
+ * +2 golds (BOTH players) while this card is on the support line.
+ */
+export function hasTypeTax(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('nombrar_tipo_sobrecoste') ?? false;
+}
+
+/** Total cost surcharge for playing `card` ('nombrar_tipo_sobrecoste'). */
+export function typeTax(card: Card, players: Record<PlayerId, PlayerState>): number {
+  let tax = 0;
+  for (const p of Object.values(players)) {
+    for (const t of p.supportField) {
+      if (hasTypeTax(t) && t.namedType === card.tipo) tax += TYPE_TAX_AMOUNT;
+    }
+  }
+  return tax;
+}
+
+/** Coste efectivo de jugar una carta: impreso + sobrecostes activos. */
+export function effectiveCost(card: Card, players: Record<PlayerId, PlayerState>): number {
+  return card.coste + typeTax(card, players);
 }
 
 /** Cost and mill amount of 'pagar2_bota6' (Luis Carrera SP). */
