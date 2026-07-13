@@ -208,6 +208,22 @@ export const SEED_ABILITIES = [
     tipos: ['aliado'],
   },
   {
+    code: 'desde_cementerio',
+    nombre: 'Jugar desde el Cementerio',
+    descripcion: 'Esta carta puede jugarse desde tu Cementerio como si estuviera en tu Mano, pagando su Coste. El Cementerio brilla dorado cuando contiene cartas jugables; las armas eligen portador entre tus aliados.',
+    implemented: true,
+    categoria: 'carta',
+    tipos: [],
+  },
+  {
+    code: 'destierro_combate',
+    nombre: 'Daño al Castillo: destierro masivo',
+    descripcion: 'Cada vez que el portador de esta arma haga Daño de Combate a un Mazo Castillo, se destierran todos los Aliados en juego que controle ese oponente (Indesterrable y "No sale del juego" sobreviven; sus armas equipadas van al Cementerio).',
+    implemented: true,
+    categoria: 'carta',
+    tipos: ['arma'],
+  },
+  {
     code: 'nombrar_tipo_sobrecoste',
     nombre: 'Nombrar tipo: +2 Oros',
     descripcion: 'Cuando esta carta entra en juego, su dueño nombra un tipo de carta que no sea Oro (Aliado, Arma, Tótem o Talismán). Las cartas del tipo nombrado cuestan 2 Oros adicionales — para ambos jugadores — mientras esta carta esté en la línea de apoyo.',

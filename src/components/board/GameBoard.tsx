@@ -60,6 +60,7 @@ export function GameBoard() {
   const pendingTypeChoice = useGameStore((s) => s.pendingTypeChoice);
   const startSwap = useTargetingStore((s) => s.startSwap);
   const swapTargeting = useTargetingStore((s) => s.swap);
+  const equipTargeting = useTargetingStore((s) => s.equip);
   const pendingShuffleChoice = useGameStore((s) => s.pendingShuffleChoice);
 
   const [rotPhase, setRotPhase]       = useState<'idle' | 'out' | 'in'>('idle');
@@ -609,6 +610,21 @@ export function GameBoard() {
               </Button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Targeting banner: eligiendo portador para arma desde zona ──── */}
+      {equipTargeting && (
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 border border-yellow-500/50 rounded-full px-4 py-2 flex items-center gap-3 shadow-xl">
+          <span className="text-xs text-yellow-300 font-bold">
+            Elige un aliado tuyo como portador del arma
+          </span>
+          <button
+            onClick={cancelTargeting}
+            className="text-xs text-slate-400 hover:text-white underline"
+          >
+            Cancelar
+          </button>
         </div>
       )}
 

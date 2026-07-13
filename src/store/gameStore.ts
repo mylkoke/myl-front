@@ -28,12 +28,14 @@ import {
   RESPONSE_WINDOW_MS,
   hasDrawDiscardGold,
   cannotLeavePlay,
+  canPlayFromZone,
+  hasCombatExileAll,
   hasControlSwap,
+  hasIndesterrable,
   hasFinalPhaseRegroup,
   hasImbloqueable,
   hasMillDestroy,
   hasOroInicial,
-  hasPlayFromGraveyard,
   hasRelampago,
   hasShuffleDraw,
   hasTalismanRecycle,
@@ -240,6 +242,17 @@ interface GameActions {
   playRecycledTalisman: (
     sourceInstanceId: string,
     talismanInstanceId: string,
+    playerId: PlayerId,
+  ) => void;
+  /**
+   * 'desde_cementerio' con armas: equipa el arma desde el Cementerio (o
+   * Destierro con 'jugar_desde_cementerio') a un aliado propio, pagando su
+   * coste. Con 'relampago', a velocidad de respuesta.
+   */
+  equipWeaponFromZone: (
+    weaponInstanceId: string,
+    zone: 'graveyard' | 'exile',
+    allyInstanceId: string,
     playerId: PlayerId,
   ) => void;
   /**
@@ -863,6 +876,7 @@ export const useGameStore = create<GameStore>()(
         if (outcome.defenderDestroyed && defender) {
           newDefender = destroyAlly(newDefender, defender.instanceId);
         }
+        let combatExiled = 0;
         if (outcome.deckDamage > 0) {
           const damaged = Math.min(outcome.deckDamage, newDefender.deck.length);
           const lost = newDefender.deck.slice(0, damaged).map(createCardInPlay);
@@ -872,6 +886,33 @@ export const useGameStore = create<GameStore>()(
             graveyard: [...newDefender.graveyard, ...lost],
             life: newDefender.deck.length - damaged,
           };
+
+          // 'destierro_combate' (Sable de Caballería SP): si el arma del
+          // atacante tiene la habilidad y hubo daño de combate al castillo,
+          // se destierran todos los aliados en juego de ese oponente.
+          const atkWeapon = attackerPlayer.equippedWeapons[attacker.instanceId];
+          if (damaged > 0 && atkWeapon && hasCombatExileAll(atkWeapon)) {
+            const exilable = (c: CardInPlay) => !hasIndesterrable(c) && !cannotLeavePlay(c);
+            const toExile = [...newDefender.defenseField, ...newDefender.attackField].filter(exilable);
+            combatExiled = toExile.length;
+            if (combatExiled > 0) {
+              const exiledIds = new Set(toExile.map((c) => c.instanceId));
+              const orphanWeapons = toExile
+                .map((c) => newDefender.equippedWeapons[c.instanceId])
+                .filter((w): w is CardInPlay => !!w);
+              const restWeapons = { ...newDefender.equippedWeapons };
+              for (const id of exiledIds) delete restWeapons[id];
+              newDefender = {
+                ...newDefender,
+                defenseField: newDefender.defenseField.filter((c) => !exiledIds.has(c.instanceId)),
+                attackField: newDefender.attackField.filter((c) => !exiledIds.has(c.instanceId)),
+                exile: [...newDefender.exile, ...toExile],
+                // Las armas de los desterrados van al cementerio.
+                graveyard: [...newDefender.graveyard, ...orphanWeapons],
+                equippedWeapons: restWeapons,
+              };
+            }
+          }
         }
 
         set((s) => ({
@@ -904,6 +945,14 @@ export const useGameStore = create<GameStore>()(
           const atkFate = hasIndestructible(attacker) ? 'el atacante sobrevive (Indestructible)' : 'atacante destruido';
           get().addLog(
             `${defender.nombre} (${defForce}) detiene a ${attacker.nombre} (${atkForce}): ${atkFate}.`,
+            'combat'
+          );
+        }
+
+        if (combatExiled > 0) {
+          const atkWeapon = attackerPlayer.equippedWeapons[attacker.instanceId];
+          get().addLog(
+            `${atkWeapon?.nombre ?? 'El arma'}: daño de combate al Castillo — ${combatExiled} aliado(s) de ${defenderPlayer.name} son desterrados.`,
             'combat'
           );
         }
@@ -1359,7 +1408,7 @@ export const useGameStore = create<GameStore>()(
           return;
         }
         const card = player[zone].find((c) => c.instanceId === cardInstanceId);
-        if (!card || !hasPlayFromGraveyard(card)) return;
+        if (!card || !canPlayFromZone(card, zone)) return;
 
         // Mismas reglas que jugar desde la mano (turno, fase, coste, líneas).
         const { allowed, reason } = canPlayCard(card, player, turn, players);
@@ -1367,34 +1416,57 @@ export const useGameStore = create<GameStore>()(
           get().addLog(reason ?? 'No puedes jugar esa carta ahora.', 'error');
           return;
         }
-        if (card.tipo !== 'aliado') {
-          get().addLog('Solo los aliados pueden jugarse así por ahora.', 'error');
+        if (card.tipo === 'arma' && !hasMachinery(card)) {
+          // Las armas normales se juegan eligiendo portador (equipWeaponFromZone).
+          get().addLog('Elige un portador para el arma desde el visor de la zona.', 'error');
           return;
         }
 
         const zoneCost = effectiveCost(card, players);
-        const paid = player.gold.slice(player.gold.length - zoneCost);
-        const remaining = player.gold.slice(0, player.gold.length - zoneCost);
+        // Talismanes: oros virtuales primero (como al jugarlos de la mano).
+        const fromVirtual = card.tipo === 'talisman' ? Math.min(player.talismanGold, zoneCost) : 0;
+        const fromCards = zoneCost - fromVirtual;
+        const paid = player.gold.slice(player.gold.length - fromCards);
+        const remaining = player.gold.slice(0, player.gold.length - fromCards);
         set((s) => {
           const p = s.players[playerId];
+          const sinZona = p[zone].filter((c) => c.instanceId !== cardInstanceId);
+          // Estado base con la carta fuera de la zona y el coste pagado.
+          const base: PlayerState = {
+            ...p,
+            [zone]: sinZona,
+            gold: remaining,
+            goldPaid: [...p.goldPaid, ...paid],
+            goldCount: remaining.length,
+            talismanGold: p.talismanGold - fromVirtual,
+            goldSpentThisTurn: fromCards > 0 ? true : p.goldSpentThisTurn,
+          };
+          // Destino según el tipo de carta:
+          if (card.tipo === 'aliado') {
+            base.defenseField = [...base.defenseField, { ...card, summonedThisTurn: true, tapped: false }];
+          } else if (card.tipo === 'talisman') {
+            // Se resuelve y va (o vuelve) al Cementerio.
+            base.graveyard = [...base.graveyard, card];
+          } else if (card.tipo === 'oro') {
+            base.gold = [...base.gold, card];
+            base.goldCount = base.gold.length;
+          } else {
+            base.supportField = [...base.supportField, card]; // tótem / maquinaria
+          }
           return {
-            players: {
-              ...s.players,
-              [playerId]: {
-                ...p,
-                [zone]: p[zone].filter((c) => c.instanceId !== cardInstanceId),
-                defenseField: [...p.defenseField, { ...card, summonedThisTurn: true, tapped: false }],
-                gold: remaining,
-                goldPaid: [...p.goldPaid, ...paid],
-                goldCount: remaining.length,
-                goldSpentThisTurn: zoneCost > 0 ? true : p.goldSpentThisTurn,
-              },
+            players: { ...s.players, [playerId]: base },
+            turn: {
+              ...s.turn,
+              cardsPlayedThisTurn: s.turn.cardsPlayedThisTurn + 1,
+              goldPlayedThisTurn:
+                card.tipo === 'oro' ? s.turn.goldPlayedThisTurn + 1 : s.turn.goldPlayedThisTurn,
             },
-            turn: { ...s.turn, cardsPlayedThisTurn: s.turn.cardsPlayedThisTurn + 1 },
           };
         });
         get().addLog(
-          `${player.name} juega a ${card.nombre} desde ${zone === 'graveyard' ? 'su Cementerio' : 'su Destierro'} (−${card.coste} Oros).`,
+          card.tipo === 'talisman'
+            ? `${player.name} activa ${card.nombre} desde ${zone === 'graveyard' ? 'su Cementerio' : 'su Destierro'} (−${zoneCost} Oros): "${card.habilidad}".`
+            : `${player.name} juega a ${card.nombre} desde ${zone === 'graveyard' ? 'su Cementerio' : 'su Destierro'} (−${zoneCost} Oros).`,
           'action'
         );
 
@@ -1415,6 +1487,62 @@ export const useGameStore = create<GameStore>()(
         if (hasShuffleDraw(card)) {
           set({ pendingShuffleChoice: { playerId, cardName: card.nombre } });
         }
+      },
+
+      equipWeaponFromZone: (weaponInstanceId, zone, allyInstanceId, playerId) => {
+        const { players, turn, combat, responseWindow } = get();
+        const player = players[playerId];
+        if (combat || responseWindow) {
+          get().addLog('No puedes equipar armas ahora.', 'error');
+          return;
+        }
+        const weapon = player[zone].find((c) => c.instanceId === weaponInstanceId);
+        if (!weapon || weapon.tipo !== 'arma' || !canPlayFromZone(weapon, zone)) return;
+
+        // 'relampago' permite equipar a velocidad de respuesta; si no, solo
+        // en la Vigilia propia (igual que jugar desde la mano).
+        if (!hasRelampago(weapon) && (turn.currentPlayer !== playerId || turn.phase !== 'vigilia')) {
+          get().addLog('Solo puedes equipar armas en tu Vigilia.', 'error');
+          return;
+        }
+        const ally = player.defenseField.find((c) => c.instanceId === allyInstanceId);
+        if (!ally) return;
+
+        const weaponCost = effectiveCost(weapon, players);
+        if (weaponCost > player.goldCount) {
+          get().addLog(`Necesitas ${weaponCost} de oro para equipar ${weapon.nombre}.`, 'error');
+          return;
+        }
+
+        set((s) => {
+          const p = s.players[playerId];
+          const paid = p.gold.slice(p.gold.length - weaponCost);
+          const remaining = p.gold.slice(0, p.gold.length - weaponCost);
+          const prevWeapon = p.equippedWeapons[allyInstanceId];
+          return {
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                [zone]: p[zone].filter((c) => c.instanceId !== weaponInstanceId),
+                graveyard: prevWeapon
+                  ? [...p.graveyard.filter((c) => c.instanceId !== weaponInstanceId), prevWeapon]
+                  : zone === 'graveyard'
+                  ? p.graveyard.filter((c) => c.instanceId !== weaponInstanceId)
+                  : p.graveyard,
+                gold: remaining,
+                goldPaid: [...p.goldPaid, ...paid],
+                goldCount: remaining.length,
+                goldSpentThisTurn: weaponCost > 0 ? true : p.goldSpentThisTurn,
+                equippedWeapons: { ...p.equippedWeapons, [allyInstanceId]: weapon },
+              },
+            },
+          };
+        });
+        get().addLog(
+          `${player.name} equipa ${weapon.nombre} desde ${zone === 'graveyard' ? 'su Cementerio' : 'su Destierro'} a ${ally.nombre} (+${weapon.bonusFuerza ?? 0} ⚔, −${weaponCost} Oros).`,
+          'action'
+        );
       },
 
       playRecycledTalisman: (sourceInstanceId, talismanInstanceId, playerId) => {

@@ -434,6 +434,33 @@ export function hasPlayFromGraveyard(card: Card): boolean {
 }
 
 /**
+ * 'desde_cementerio' (genérica, cualquier tipo): la carta puede jugarse desde
+ * el Cementerio propio como si estuviera en la mano, pagando su coste. Las
+ * armas sin maquinaria eligen portador (targeting dorado).
+ */
+export function hasDesdeCementerio(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('desde_cementerio') ?? false;
+}
+
+/** ¿Puede `card` jugarse desde `zone`? ('jugar_desde_cementerio' cubre
+ *  Cementerio y Destierro; 'desde_cementerio' solo Cementerio). */
+export function canPlayFromZone(card: Card, zone: 'graveyard' | 'exile'): boolean {
+  if (hasPlayFromGraveyard(card)) return true;
+  return zone === 'graveyard' && hasDesdeCementerio(card);
+}
+
+/**
+ * 'destierro_combate' (Sable de Caballería SP): cada vez que el PORTADOR de
+ * esta arma hace daño de combate a un Mazo Castillo, se destierran todos los
+ * aliados en juego de ese oponente (respeta 'indesterrable' y
+ * 'no_sale_del_juego'; las armas equipadas de los desterrados van al
+ * cementerio).
+ */
+export function hasCombatExileAll(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('destierro_combate') ?? false;
+}
+
+/**
  * 'bonus_patriotas' (Bernardo O'Higgins): while this card is on the board
  * (defense or attack line), ALL Patriota allies — both players', including
  * itself — gain +1 Fuerza. Stacks per card with the ability in play.

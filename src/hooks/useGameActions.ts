@@ -31,6 +31,7 @@ export function useGameActions() {
   const activateMillGold = useGameStore((s) => s.activateMillGold);
   const chooseRaceSuppress = useGameStore((s) => s.chooseRaceSuppress);
   const resolveTypeChoice = useGameStore((s) => s.resolveTypeChoice);
+  const equipWeaponFromZone = useGameStore((s) => s.equipWeaponFromZone);
   const passResponse = useGameStore((s) => s.passResponse);
   const closeResponseWindow = useGameStore((s) => s.closeResponseWindow);
   const weakenAlly = useGameStore((s) => s.weakenAlly);
@@ -123,6 +124,8 @@ export function useGameActions() {
     activateMillGold: guarded(activateMillGold),
     chooseRaceSuppress: guarded(chooseRaceSuppress),
     playFromZone:  guarded(playFromZone),
+    // Armas 'relampago' pueden equiparse fuera de turno desde el cementerio.
+    equipWeaponFromZone: ownerGated<[string, 'graveyard' | 'exile', string]>(equipWeaponFromZone),
     playRecycledTalisman: guarded(playRecycledTalisman),
     regroupGold:   guarded(regroupGold),
     regroupAllies: guarded(regroupAllies),

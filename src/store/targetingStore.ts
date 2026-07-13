@@ -13,21 +13,26 @@ interface TargetingState {
   destroy: { sourceInstanceId: string; playerId: PlayerId } | null;
   /** Active "swap control" targeting ('intercambio_control'): rival non-gold cards. */
   swap: { sourceInstanceId: string; playerId: PlayerId } | null;
+  /** Active "equip from zone" targeting ('desde_cementerio' con armas): own allies. */
+  equip: { weaponInstanceId: string; zone: 'graveyard' | 'exile'; playerId: PlayerId } | null;
   startWeaken: (sourceInstanceId: string, playerId: PlayerId) => void;
   startDestroy: (sourceInstanceId: string, playerId: PlayerId) => void;
   startSwap: (sourceInstanceId: string, playerId: PlayerId) => void;
+  startEquip: (weaponInstanceId: string, zone: 'graveyard' | 'exile', playerId: PlayerId) => void;
   cancel: () => void;
 }
 
+const NONE = { weaken: null, destroy: null, swap: null, equip: null };
+
 export const useTargetingStore = create<TargetingState>((set) => ({
-  weaken: null,
-  destroy: null,
-  swap: null,
+  ...NONE,
   startWeaken: (sourceInstanceId, playerId) =>
-    set({ weaken: { sourceInstanceId, playerId }, destroy: null, swap: null }),
+    set({ ...NONE, weaken: { sourceInstanceId, playerId } }),
   startDestroy: (sourceInstanceId, playerId) =>
-    set({ destroy: { sourceInstanceId, playerId }, weaken: null, swap: null }),
+    set({ ...NONE, destroy: { sourceInstanceId, playerId } }),
   startSwap: (sourceInstanceId, playerId) =>
-    set({ swap: { sourceInstanceId, playerId }, weaken: null, destroy: null }),
-  cancel: () => set({ weaken: null, destroy: null, swap: null }),
+    set({ ...NONE, swap: { sourceInstanceId, playerId } }),
+  startEquip: (weaponInstanceId, zone, playerId) =>
+    set({ ...NONE, equip: { weaponInstanceId, zone, playerId } }),
+  cancel: () => set({ ...NONE }),
 }));

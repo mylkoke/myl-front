@@ -42,7 +42,7 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
   const [detailCard, setDetailCard] = useState<CardInPlay | null>(null);
   const [deckSearchOpen, setDeckSearchOpen] = useState(false);
   const { equipWeapon, summonCaudilloFromDeck, weakenAlly, millDestroyAlly, swapControl,
-    playRecycledTalisman, activateMillGold, chooseRaceSuppress } = useGameActions();
+    playRecycledTalisman, activateMillGold, chooseRaceSuppress, equipWeaponFromZone } = useGameActions();
   const [recycleOpen, setRecycleOpen] = useState(false);
   const [razaPickerOpen, setRazaPickerOpen] = useState(false);
   const turn   = useGameStore((s) => s.turn);
@@ -65,8 +65,14 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
   const swapTargetingRaw = useTargetingStore((s) => s.swap);
   const swapTargeting =
     swapTargetingRaw && swapTargetingRaw.playerId !== playerId ? swapTargetingRaw : null;
+  // 'desde_cementerio' con armas: solo los aliados PROPIOS del que equipa.
+  const equipTargetingRaw = useTargetingStore((s) => s.equip);
+  const equipTargeting =
+    equipTargetingRaw && equipTargetingRaw.playerId === playerId && !isOpponent
+      ? equipTargetingRaw
+      : null;
   const cancelTargeting = useTargetingStore((s) => s.cancel);
-  const anyTargeting = weakenTargeting ?? destroyTargeting ?? swapTargeting;
+  const anyTargeting = weakenTargeting ?? destroyTargeting ?? swapTargeting ?? equipTargeting;
 
   const isMyTurn = turn.currentPlayer === playerId && !isOpponent;
 
@@ -200,7 +206,7 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
           {anyTargeting && (
             <div
               className={`absolute -inset-1 rounded-xl ring-2 animate-pulse pointer-events-none z-30 ${
-                swapTargeting ? 'ring-yellow-400' : 'ring-red-400'
+                swapTargeting || equipTargeting ? 'ring-yellow-400' : 'ring-red-400'
               }`}
             />
           )}
@@ -234,6 +240,16 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
                       ally.instanceId,
                       playerId,
                       swapTargeting.playerId,
+                    );
+                    cancelTargeting();
+                  }
+                : equipTargeting
+                ? () => {
+                    equipWeaponFromZone(
+                      equipTargeting.weaponInstanceId,
+                      equipTargeting.zone,
+                      ally.instanceId,
+                      equipTargeting.playerId,
                     );
                     cancelTargeting();
                   }
