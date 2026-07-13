@@ -47,7 +47,18 @@ export function DeckEditorPage() {
         if (active) {
           setDeckId(active.id);
           setDeckName(active.name);
-          setDeckMap(Object.fromEntries(active.entries.map((e) => [e.cardId, e.qty])));
+          // Sanea el mazo: descarta entradas de cartas que ya no existen en el
+          // catálogo (p.ej. cartas del seed borradas). Sin esto quedan
+          // "cartas fantasma" que inflan el total y bloquean el botón Agregar.
+          const validIds = new Set(cards.map((c) => c.id));
+          const entries = active.entries.filter((e) => validIds.has(e.cardId));
+          const ghosts = active.entries.length - entries.length;
+          setDeckMap(Object.fromEntries(entries.map((e) => [e.cardId, e.qty])));
+          if (ghosts > 0) {
+            setMessage(
+              `Se quitaron ${ghosts} carta(s) de tu mazo que ya no existen en el catálogo — pulsa Guardar para confirmar`,
+            );
+          }
         }
       } catch (e) {
         setMessage(e instanceof Error ? e.message : 'Error cargando datos');
@@ -220,7 +231,9 @@ export function DeckEditorPage() {
               <div key={card.id} className="relative flex flex-col items-center gap-1">
                 <div className="relative">
                   <CardView card={asCardInPlay(card)} size="sm" onClick={() => setDetailCard(card)} />
-                  <span className="absolute -top-1.5 -right-1.5 z-10 bg-yellow-500 text-black text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center shadow">
+                  {/* Contador de copias: neutro (blanco) para no confundirse
+                      con el coste (amarillo) ni la fuerza (rojo) */}
+                  <span className="absolute -top-1.5 -right-1.5 z-20 bg-slate-100 text-slate-900 text-[10px] font-bold rounded-full min-w-5 h-5 px-1 flex items-center justify-center shadow border border-slate-400">
                     ×{qty}
                   </span>
                 </div>
