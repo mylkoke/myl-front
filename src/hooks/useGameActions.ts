@@ -31,6 +31,8 @@ export function useGameActions() {
   const activateMillGold = useGameStore((s) => s.activateMillGold);
   const chooseRaceSuppress = useGameStore((s) => s.chooseRaceSuppress);
   const resolveTypeChoice = useGameStore((s) => s.resolveTypeChoice);
+  const resolvePatriotaTrigger = useGameStore((s) => s.resolvePatriotaTrigger);
+  const pickPatriotaGraveyardCard = useGameStore((s) => s.pickPatriotaGraveyardCard);
   const equipWeaponFromZone = useGameStore((s) => s.equipWeaponFromZone);
   const passResponse = useGameStore((s) => s.passResponse);
   const closeResponseWindow = useGameStore((s) => s.closeResponseWindow);
@@ -113,6 +115,9 @@ export function useGameActions() {
     // 'intercambio_control' puede resolverse fuera de turno (Relámpago).
     resolveSwapChoice: ownerGated<[boolean]>(resolveSwapChoice),
     resolveTypeChoice: ownerGated<[CardType]>(resolveTypeChoice),
+    // 'trigger_patriota_roba_baraja' puede resolverse fuera de turno (Relámpago).
+    resolvePatriotaTrigger: ownerGated<[boolean]>(resolvePatriotaTrigger),
+    pickPatriotaGraveyardCard: ownerGated<[string]>(pickPatriotaGraveyardCard),
     swapControl: ownerGated<[string, string, PlayerId]>(swapControl),
     passResponse: ownerGated<[]>(passResponse),
     closeResponseWindow: () => {

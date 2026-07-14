@@ -149,6 +149,46 @@ export function hasInmunidadTalismanes(card: Card): boolean {
 }
 
 /**
+ * 'inmunidad_aliados' (Arturo Prat): this card cannot be affected by ANY
+ * ally's ability — targeted ally effects fail on it and mass ally effects
+ * skip it. Every ally-sourced effect that touches a card MUST check this.
+ */
+export function hasInmunidadAliados(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('inmunidad_aliados') ?? false;
+}
+
+/**
+ * 'otorga_inmunidad_talismanes' (Arturo Prat): while this card is in play,
+ * the controller's Patriota allies gain "Inmunidad: Talismanes".
+ */
+export function grantsTalismanImmunity(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('otorga_inmunidad_talismanes') ?? false;
+}
+
+/**
+ * Effective "Inmunidad: Talismanes" for `card` controlled by `owner`:
+ * either its own ability, or granted because it is a Patriota ally and its
+ * controller has a card with 'otorga_inmunidad_talismanes' in play.
+ */
+export function hasInmunidadTalismanesEffective(card: Card, owner: PlayerState): boolean {
+  if (hasInmunidadTalismanes(card)) return true;
+  return (
+    card.tipo === 'aliado' &&
+    card.raza === 'Patriota' &&
+    [...owner.defenseField, ...owner.attackField].some(grantsTalismanImmunity)
+  );
+}
+
+/**
+ * 'trigger_patriota_roba_baraja' (Arturo Prat): each time a Patriota ally
+ * enters play, its controller MAY draw 1 card from the castle deck, shuffle
+ * one card from the graveyard back into the castle, then shuffle the deck.
+ */
+export function hasPatriotaEnterTrigger(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('trigger_patriota_roba_baraja') ?? false;
+}
+
+/**
  * 'patriotas_no_anulables' (Manuel Blanco Encalada): while a card with this
  * ability is in play, its controller's Patriota allies cannot be annulled.
  */
@@ -403,7 +443,7 @@ export function annulBlockReason(target: Card, owner: PlayerState): string | nul
   if (hasInanulable(target)) {
     return `${target.nombre} no puede ser anulada por ninguna carta.`;
   }
-  if (hasInmunidadTalismanes(target)) {
+  if (hasInmunidadTalismanesEffective(target, owner)) {
     return `${target.nombre} tiene Inmunidad: Talismanes — no puede ser anulada.`;
   }
   if (isProtectedFromAnnulment(target, owner)) {

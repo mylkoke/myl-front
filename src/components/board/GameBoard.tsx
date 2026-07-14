@@ -55,13 +55,15 @@ export function GameBoard() {
   const pendingDiscard = useGameStore((s) => s.pendingDiscard);
   const responseWindow = useGameStore((s) => s.responseWindow);
   const { discardFromHand, respondWithAnnul, passResponse, closeResponseWindow, resolveShuffleChoice,
-    resolveSwapChoice, resolveTypeChoice, playCard: playCardAction } = useGameActions();
+    resolveSwapChoice, resolveTypeChoice, resolvePatriotaTrigger, pickPatriotaGraveyardCard,
+    playCard: playCardAction } = useGameActions();
   const pendingSwapChoice = useGameStore((s) => s.pendingSwapChoice);
   const pendingTypeChoice = useGameStore((s) => s.pendingTypeChoice);
   const startSwap = useTargetingStore((s) => s.startSwap);
   const swapTargeting = useTargetingStore((s) => s.swap);
   const equipTargeting = useTargetingStore((s) => s.equip);
   const pendingShuffleChoice = useGameStore((s) => s.pendingShuffleChoice);
+  const pendingPatriotaTrigger = useGameStore((s) => s.pendingPatriotaTrigger);
 
   const [rotPhase, setRotPhase]       = useState<'idle' | 'out' | 'in'>('idle');
   const [handoffName, setHandoffName]   = useState('');
@@ -640,6 +642,62 @@ export function GameBoard() {
           >
             Cancelar
           </button>
+        </div>
+      )}
+
+      {/* ── Trigger 'trigger_patriota_roba_baraja' (Arturo Prat) ───────── */}
+      {pendingPatriotaTrigger && (!isOnline || mySeat === pendingPatriotaTrigger.playerId) && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
+          {pendingPatriotaTrigger.step === 'confirm' ? (
+            <div className="w-full max-w-sm bg-slate-900 border border-sky-500/40 rounded-2xl p-4 sm:p-6 shadow-2xl text-center">
+              <div className="text-sky-300 text-xs uppercase tracking-widest font-bold">
+                {pendingPatriotaTrigger.sourceName}
+              </div>
+              <p className="text-slate-300 text-sm mt-2 mb-4">
+                Entró un Aliado Patriota. ¿Robar 1 carta del Castillo y barajar
+                una carta del Cementerio de vuelta en él?
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="primary"
+                  fullWidth
+                  onClick={() => resolvePatriotaTrigger(true, pendingPatriotaTrigger.playerId)}
+                >
+                  Sí, usar el efecto
+                </Button>
+                <Button
+                  variant="secondary"
+                  fullWidth
+                  onClick={() => resolvePatriotaTrigger(false, pendingPatriotaTrigger.playerId)}
+                >
+                  No
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="w-full max-w-md bg-slate-900 border border-sky-500/40 rounded-2xl p-4 sm:p-6 shadow-2xl">
+              <div className="text-center mb-3">
+                <div className="text-sky-300 text-xs uppercase tracking-widest font-bold">
+                  {pendingPatriotaTrigger.sourceName}
+                </div>
+                <p className="text-slate-300 text-sm mt-1">
+                  Elige una carta del Cementerio para barajar en tu Castillo.
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 max-h-64 overflow-y-auto">
+                {players[pendingPatriotaTrigger.playerId].graveyard.map((card) => (
+                  <CardView
+                    key={card.instanceId}
+                    card={card}
+                    size="sm"
+                    onClick={() =>
+                      pickPatriotaGraveyardCard(card.instanceId, pendingPatriotaTrigger.playerId)
+                    }
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

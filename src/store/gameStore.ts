@@ -32,6 +32,8 @@ import {
   hasCombatExileAll,
   hasControlSwap,
   hasIndesterrable,
+  hasInmunidadAliados,
+  hasPatriotaEnterTrigger,
   hasFinalPhaseRegroup,
   hasImbloqueable,
   hasMillDestroy,
@@ -115,6 +117,23 @@ function restoreAbilities(
   );
 }
 
+/**
+ * 'trigger_patriota_roba_baraja' (Arturo Prat): al entrar un Aliado Patriota,
+ * si su dueño controla una carta con la habilidad, abre la decisión de usar
+ * el efecto. Se llama desde runtime (useGameStore ya existe).
+ */
+function maybeTriggerPatriotaEnter(card: Card, playerId: PlayerId): void {
+  if (card.tipo !== 'aliado' || card.raza !== 'Patriota') return;
+  const st = useGameStore.getState();
+  if (st.isGameOver) return;
+  const p = st.players[playerId];
+  const source = [...p.defenseField, ...p.attackField].find(hasPatriotaEnterTrigger);
+  if (!source) return;
+  useGameStore.setState({
+    pendingPatriotaTrigger: { playerId, sourceName: source.nombre, step: 'confirm' },
+  });
+}
+
 export function buildInitialState(
   deckPlayer?: Card[],
   deckOpponent?: Card[],
@@ -150,6 +169,7 @@ export function buildInitialState(
     pendingShuffleChoice: null,
     pendingSwapChoice: null,
     pendingTypeChoice: null,
+    pendingPatriotaTrigger: null,
     responseWindow: null,
     fxLightning: null,
     gameLog: [
@@ -316,6 +336,14 @@ interface GameActions {
    * tótem esté en la línea de apoyo.
    */
   resolveTypeChoice: (tipo: CardType, playerId: PlayerId) => void;
+  /**
+   * 'trigger_patriota_roba_baraja' (Arturo Prat): sí/no. Si acepta, roba 1
+   * del Castillo y pasa a elegir una carta del Cementerio (o baraja y cierra
+   * si el Cementerio está vacío).
+   */
+  resolvePatriotaTrigger: (accept: boolean, playerId: PlayerId) => void;
+  /** Paso 2 del trigger: mueve la carta elegida del Cementerio al Castillo y baraja. */
+  pickPatriotaGraveyardCard: (cardInstanceId: string, playerId: PlayerId) => void;
   /** Replace the whole game state (online sync). */
   hydrateState: (state: GameState) => void;
   addLog: (msg: string, type?: GameLogEntry['type']) => void;
@@ -552,6 +580,10 @@ export const useGameStore = create<GameStore>()(
         ) {
           set({ fxLightning: Date.now() });
         }
+
+        // 'trigger_patriota_roba_baraja' (Arturo Prat): al entrar un Aliado
+        // Patriota, su dueño decide si roba y baraja una carta del cementerio.
+        maybeTriggerPatriotaEnter(card, playerId);
       },
 
       // ── Equip weapon via drag-drop ────────────────────────────────────────
@@ -1487,6 +1519,8 @@ export const useGameStore = create<GameStore>()(
         if (hasShuffleDraw(card)) {
           set({ pendingShuffleChoice: { playerId, cardName: card.nombre } });
         }
+        // 'trigger_patriota_roba_baraja': entrada de Patriota desde zona.
+        maybeTriggerPatriotaEnter(card, playerId);
       },
 
       equipWeaponFromZone: (weaponInstanceId, zone, allyInstanceId, playerId) => {
@@ -1648,6 +1682,10 @@ export const useGameStore = create<GameStore>()(
           (c) => c.instanceId === targetInstanceId && c.tipo === 'aliado'
         );
         if (!target) return;
+        if (hasInmunidadAliados(target)) {
+          get().addLog(`${target.nombre} es inmune a las habilidades de Aliados.`, 'error');
+          return;
+        }
         if (hasIndestructible(target) || cannotLeavePlay(target)) {
           get().addLog(`${target.nombre} no puede ser destruido.`, 'error');
           return;
@@ -1691,6 +1729,100 @@ export const useGameStore = create<GameStore>()(
         );
         const { isOver, winnerId } = checkGameOver(get().players);
         if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
+      },
+
+      resolvePatriotaTrigger: (accept, playerId) => {
+        const { pendingPatriotaTrigger, players } = get();
+        if (!pendingPatriotaTrigger || pendingPatriotaTrigger.playerId !== playerId) return;
+        const player = players[playerId];
+
+        if (!accept) {
+          set({ pendingPatriotaTrigger: null });
+          get().addLog(`${player.name} no usa el efecto de ${pendingPatriotaTrigger.sourceName}.`, 'system');
+          return;
+        }
+
+        // Roba 1 carta del Mazo Castillo a la mano.
+        let drewName = '';
+        if (player.deck.length > 0) {
+          const { drawn, remaining } = drawCards(player.deck, 1);
+          drewName = drawn[0].nombre;
+          set((s) => {
+            const p = s.players[playerId];
+            return {
+              players: {
+                ...s.players,
+                [playerId]: {
+                  ...p,
+                  deck: remaining,
+                  hand: [...p.hand, createCardInPlay(drawn[0])],
+                  life: remaining.length,
+                },
+              },
+            };
+          });
+        }
+
+        // Si hay cartas en el Cementerio, pasa a elegir una para el Castillo;
+        // si no, solo baraja el Castillo y cierra.
+        if (get().players[playerId].graveyard.length > 0) {
+          set({ pendingPatriotaTrigger: { ...pendingPatriotaTrigger, step: 'pick' } });
+          get().addLog(
+            `${pendingPatriotaTrigger.sourceName}: ${player.name} roba ${drewName || '—'} y elige una carta del Cementerio para su Castillo.`,
+            'action'
+          );
+        } else {
+          set((s) => {
+            const p = s.players[playerId];
+            const shuffled = shuffleDeck(p.deck);
+            return {
+              pendingPatriotaTrigger: null,
+              players: { ...s.players, [playerId]: { ...p, deck: shuffled } },
+            };
+          });
+          get().addLog(
+            `${pendingPatriotaTrigger.sourceName}: ${player.name} roba ${drewName || '—'} y baraja su Castillo.`,
+            'action'
+          );
+        }
+      },
+
+      pickPatriotaGraveyardCard: (cardInstanceId, playerId) => {
+        const { pendingPatriotaTrigger, players } = get();
+        if (
+          !pendingPatriotaTrigger ||
+          pendingPatriotaTrigger.playerId !== playerId ||
+          pendingPatriotaTrigger.step !== 'pick'
+        ) {
+          return;
+        }
+        const player = players[playerId];
+        const card = player.graveyard.find((c) => c.instanceId === cardInstanceId);
+        if (!card) return;
+
+        set((s) => {
+          const p = s.players[playerId];
+          // La carta vuelve al Castillo y el mazo se baraja (al robarse de
+          // nuevo, createCardInPlay regenera su instancia).
+          const asCard: Card = { ...card };
+          const newDeck = shuffleDeck([...p.deck, asCard]);
+          return {
+            pendingPatriotaTrigger: null,
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                graveyard: p.graveyard.filter((c) => c.instanceId !== cardInstanceId),
+                deck: newDeck,
+                life: newDeck.length,
+              },
+            },
+          };
+        });
+        get().addLog(
+          `${pendingPatriotaTrigger.sourceName}: ${player.name} baraja ${card.nombre} desde el Cementerio en su Castillo.`,
+          'action'
+        );
       },
 
       resolveTypeChoice: (tipo, playerId) => {
@@ -1748,6 +1880,10 @@ export const useGameStore = create<GameStore>()(
             (c) => c.instanceId === targetInstanceId && c.tipo !== 'oro'
           ) ?? null;
         if (!target) return;
+        if (hasInmunidadAliados(target)) {
+          get().addLog(`${target.nombre} es inmune a las habilidades de Aliados.`, 'error');
+          return;
+        }
 
         set((s) => {
           const me = s.players[playerId];
@@ -2105,7 +2241,9 @@ export const useGameStore = create<GameStore>()(
               if (
                 c.instanceId === sourceInstanceId ||
                 c.raza === raza ||
-                (c.habilidadesEspeciales?.length ?? 0) === 0
+                (c.habilidadesEspeciales?.length ?? 0) === 0 ||
+                // 'inmunidad_aliados': inmune a esta habilidad de aliado.
+                hasInmunidadAliados(c)
               ) {
                 return c;
               }
@@ -2158,6 +2296,13 @@ export const useGameStore = create<GameStore>()(
           (c) => c.instanceId === targetInstanceId && c.tipo === 'aliado'
         );
         if (!target) return;
+
+        // 'inmunidad_aliados': el objetivo no puede ser afectado por
+        // habilidades de aliados como esta.
+        if (hasInmunidadAliados(target)) {
+          get().addLog(`${target.nombre} es inmune a las habilidades de Aliados.`, 'error');
+          return;
+        }
 
         // 'fuerza_inmutable': si el bando del objetivo tiene la fuerza
         // bloqueada, tampoco puede reducírsele a 0.
@@ -2260,6 +2405,9 @@ export const useGameStore = create<GameStore>()(
           `${source.nombre} paga ${CAUDILLO_SUMMON_GOLD_COST} oros e invoca a ${target.nombre} desde el Mazo Castillo sin pagar su coste.`,
           'action'
         );
+
+        // 'trigger_patriota_roba_baraja': el invocado también dispara la entrada.
+        maybeTriggerPatriotaEnter(target, playerId);
 
         const { isOver, winnerId } = checkGameOver(get().players);
         if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });

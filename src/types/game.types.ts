@@ -150,6 +150,15 @@ export interface GameState {
    * Se sincroniza online.
    */
   pendingTypeChoice: { playerId: PlayerId; cardInstanceId: string; cardName: string } | null;
+  /**
+   * Decisión pendiente de 'trigger_patriota_roba_baraja' (Arturo Prat): al
+   * entrar un Aliado Patriota, su dueño decide si usa el efecto. Fase
+   * 'confirm' = sí/no; 'pick' = elegir carta del Cementerio → Castillo.
+   * Se sincroniza online.
+   */
+  pendingPatriotaTrigger:
+    | { playerId: PlayerId; sourceName: string; step: 'confirm' | 'pick' }
+    | null;
   responseWindow: {
     /** Carta recién jugada (ya en su zona) que puede ser anulada */
     cardInstanceId: string;

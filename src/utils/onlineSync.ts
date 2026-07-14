@@ -19,6 +19,7 @@ export function snapshotGameState(): GameState {
     pendingShuffleChoice: s.pendingShuffleChoice,
     pendingSwapChoice: s.pendingSwapChoice,
     pendingTypeChoice: s.pendingTypeChoice,
+    pendingPatriotaTrigger: s.pendingPatriotaTrigger,
     responseWindow: s.responseWindow,
     fxLightning: s.fxLightning,
   };
