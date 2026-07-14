@@ -62,6 +62,13 @@ export interface PlayerState {
    * en endTurn. Mientras están aquí, la carta tiene habilidadesEspeciales: [].
    */
   suppressedAbilities: Record<string, string[]>;
+  /**
+   * Habilidades suprimidas de forma CONTINUA por 'suprime_coste1' (Bandera
+   * Transición): key = instanceId, value = habilidadesEspeciales originales.
+   * Se restauran cuando ninguna Bandera Transición sigue en juego (no en
+   * endTurn, a diferencia de suppressedAbilities).
+   */
+  costSuppressed: Record<string, string[]>;
 
   // ── Estado del jugador ─────────────────────────────────────────────────
   life: number;
@@ -71,6 +78,11 @@ export interface PlayerState {
    * SOLO sirven para pagar talismanes y expiran al terminar el turno.
    */
   talismanGold: number;
+  /**
+   * Oros virtuales de 'oro_caudillo_x3' (Primer Escudo): SOLO pagan
+   * habilidades activadas de Aliados raza Caudillo; expiran al terminar el turno.
+   */
+  caudilloGold: number;
   drawnThisTurn: boolean;
   /** True si el jugador pagó oro durante este turno; bloquea reagrupar oro. */
   goldSpentThisTurn: boolean;
@@ -159,6 +171,12 @@ export interface GameState {
   pendingPatriotaTrigger:
     | { playerId: PlayerId; sourceName: string; step: 'confirm' | 'pick' }
     | null;
+  /**
+   * Selección abierta de 'oro_descarta_talisman' (Aurora de Chile): el
+   * jugador `viewerId` mira la mano de `targetId` y elige un Talismán a
+   * descartar. Se sincroniza online.
+   */
+  pendingHandDiscard: { viewerId: PlayerId; targetId: PlayerId; sourceName: string } | null;
   responseWindow: {
     /** Carta recién jugada (ya en su zona) que puede ser anulada */
     cardInstanceId: string;

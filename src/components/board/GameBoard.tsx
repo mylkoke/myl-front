@@ -53,10 +53,11 @@ export function GameBoard() {
   const destroyTargeting = useTargetingStore((s) => s.destroy);
   const cancelTargeting = useTargetingStore((s) => s.cancel);
   const pendingDiscard = useGameStore((s) => s.pendingDiscard);
+  const pendingHandDiscard = useGameStore((s) => s.pendingHandDiscard);
   const responseWindow = useGameStore((s) => s.responseWindow);
   const { discardFromHand, respondWithAnnul, passResponse, closeResponseWindow, resolveShuffleChoice,
     resolveSwapChoice, resolveTypeChoice, resolvePatriotaTrigger, pickPatriotaGraveyardCard,
-    playCard: playCardAction } = useGameActions();
+    discardRivalTalisman, playCard: playCardAction } = useGameActions();
   const pendingSwapChoice = useGameStore((s) => s.pendingSwapChoice);
   const pendingTypeChoice = useGameStore((s) => s.pendingTypeChoice);
   const startSwap = useTargetingStore((s) => s.startSwap);
@@ -726,6 +727,35 @@ export function GameBoard() {
               >
                 Conservar mi mano
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Aurora de Chile: descartar un Talismán de la mano rival ────── */}
+      {pendingHandDiscard && (!isOnline || mySeat === pendingHandDiscard.viewerId) && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
+          <div className="w-full max-w-md bg-slate-900 border border-purple-500/40 rounded-2xl p-4 sm:p-6 shadow-2xl">
+            <div className="text-center mb-3">
+              <div className="text-purple-300 text-xs uppercase tracking-widest font-bold">
+                {pendingHandDiscard.sourceName}
+              </div>
+              <p className="text-slate-300 text-sm mt-1">
+                Mira la mano de {players[pendingHandDiscard.targetId].name} y elige
+                un Talismán para descartarlo.
+              </p>
+            </div>
+            <div className="flex flex-wrap justify-center gap-2 max-h-64 overflow-y-auto">
+              {players[pendingHandDiscard.targetId].hand
+                .filter((c) => c.tipo === 'talisman')
+                .map((card) => (
+                  <CardView
+                    key={card.instanceId}
+                    card={card}
+                    size="sm"
+                    onClick={() => discardRivalTalisman(card.instanceId, pendingHandDiscard.viewerId)}
+                  />
+                ))}
             </div>
           </div>
         </div>

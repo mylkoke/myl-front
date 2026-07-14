@@ -10,8 +10,12 @@ import { useDropZone } from '@/utils/dragManager';
 import {
   canPlayFromZone,
   GOLD_TALISMAN_YIELD,
+  CAUDILLO_GOLD_YIELD,
   hasDrawDiscardGold,
   hasGoldTalismanAbility,
+  hasGoldChokeRival,
+  hasGoldDiscardTalisman,
+  hasCaudilloGoldAbility,
   hasMachinery,
 } from '@/utils/gameRules';
 import { useTargetingStore } from '@/store/targetingStore';
@@ -246,7 +250,8 @@ const ZONE_META: Record<InspectableZone, { title: string; letter: string }> = {
 
 export function SideZones({ player, playerId, isOpponent = false }: SideZonesProps) {
   const [viewerZone, setViewerZone] = useState<InspectableZone | null>(null);
-  const { activateGoldTalisman, activateGoldDrawDiscard, playFromZone } = useGameActions();
+  const { activateGoldTalisman, activateGoldDrawDiscard, playFromZone,
+    activateGoldChoke, activateGoldDiscardTalisman, activateGoldCaudillo } = useGameActions();
 
   // Cartas jugables desde zonas ('jugar_desde_cementerio' / 'desde_cementerio'):
   // la zona brilla dorada y la carta se destaca en el visor.
@@ -333,6 +338,21 @@ export function SideZones({ player, playerId, isOpponent = false }: SideZonesPro
                     ? {
                         label: 'Pagar: roba 1 carta y descarta 1',
                         onUse: () => activateGoldDrawDiscard(card.instanceId, playerId),
+                      }
+                    : hasGoldChokeRival(card)
+                    ? {
+                        label: 'Pagar: traba un Oro del rival',
+                        onUse: () => activateGoldChoke(card.instanceId, playerId),
+                      }
+                    : hasGoldDiscardTalisman(card)
+                    ? {
+                        label: 'Destruir: descartar un Talismán rival',
+                        onUse: () => activateGoldDiscardTalisman(card.instanceId, playerId),
+                      }
+                    : hasCaudilloGoldAbility(card)
+                    ? {
+                        label: `Pagar: +${CAUDILLO_GOLD_YIELD} Oros para Caudillos`,
+                        onUse: () => activateGoldCaudillo(card.instanceId, playerId),
                       }
                     : null
               : (viewerZone === 'graveyard' || viewerZone === 'exile') && !isOpponent

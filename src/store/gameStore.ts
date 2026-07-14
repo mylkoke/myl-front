@@ -32,7 +32,8 @@ import {
   hasCombatExileAll,
   hasControlSwap,
   hasIndesterrable,
-  hasInmunidadAliados,
+  immuneToAllyOrOpponentEffect,
+  hasInmunidadHabilidadesOponentes,
   hasPatriotaEnterTrigger,
   hasFinalPhaseRegroup,
   hasImbloqueable,
@@ -42,6 +43,14 @@ import {
   hasShuffleDraw,
   hasTalismanRecycle,
   hasTypeTax,
+  hasGoldChokeRival,
+  hasGoldDiscardTalisman,
+  hasCaudilloGoldAbility,
+  hasHandDiscardDraw,
+  hasHandTutorCaudillo,
+  hasCostOneSuppress,
+  costOneSuppressActive,
+  CAUDILLO_GOLD_YIELD,
   MILL_DESTROY_COST,
   SHUFFLE_DRAW_COUNT,
   isBasicGold,
@@ -99,6 +108,8 @@ function buildInitialPlayer(id: PlayerId, name: string, rawDeck: Card[]): Player
     allyAbilityUsedThisTurn: [],
     weakenedAllies: [],
     suppressedAbilities: {},
+    costSuppressed: {},
+    caudilloGold: 0,
     life: deck.length,
     goldCount: initialGold ? 1 : 0,
     talismanGold: 0,
@@ -115,6 +126,46 @@ function restoreAbilities(
   return cards.map((c) =>
     suppressed[c.instanceId] ? { ...c, habilidadesEspeciales: suppressed[c.instanceId] } : c
   );
+}
+
+/**
+ * 'suprime_coste1' (Bandera Transición): efecto CONTINUO recalculado. Si hay
+ * una Bandera en juego, toda carta en juego de coste 1 (ambos jugadores)
+ * pierde sus habilidades (guardadas en costSuppressed); si no, se restauran.
+ * Devuelve el mapa de jugadores actualizado.
+ */
+function reapplyCostOneSuppression(
+  players: Record<PlayerId, PlayerState>,
+): Record<PlayerId, PlayerState> {
+  const active = costOneSuppressActive(players);
+  const patch = {} as Record<PlayerId, PlayerState>;
+  for (const pid of ['player', 'opponent'] as PlayerId[]) {
+    const p = players[pid];
+    const cs = { ...p.costSuppressed };
+    const apply = (c: CardInPlay): CardInPlay => {
+      const shouldSuppress =
+        active && c.coste === 1 && !hasCostOneSuppress(c) && (c.habilidadesEspeciales?.length ?? 0) > 0;
+      if (shouldSuppress && !(c.instanceId in cs)) {
+        cs[c.instanceId] = c.habilidadesEspeciales!;
+        return { ...c, habilidadesEspeciales: [] };
+      }
+      // Restaura si ya no debe estar suprimida (Bandera salió de juego).
+      if (!active && c.instanceId in cs) {
+        const original = cs[c.instanceId];
+        delete cs[c.instanceId];
+        return { ...c, habilidadesEspeciales: original };
+      }
+      return c;
+    };
+    patch[pid] = {
+      ...p,
+      defenseField: p.defenseField.map(apply),
+      attackField: p.attackField.map(apply),
+      supportField: p.supportField.map(apply),
+      costSuppressed: active ? cs : {},
+    };
+  }
+  return patch;
 }
 
 /**
@@ -170,6 +221,7 @@ export function buildInitialState(
     pendingSwapChoice: null,
     pendingTypeChoice: null,
     pendingPatriotaTrigger: null,
+    pendingHandDiscard: null,
     responseWindow: null,
     fxLightning: null,
     gameLog: [
@@ -243,6 +295,18 @@ interface GameActions {
    * y cualquier turno; 1 vez por turno vía ciclo de zonas.
    */
   activateGoldDrawDiscard: (goldInstanceId: string, playerId: PlayerId) => void;
+  /** 'oro_traba_rival' (Carbón piedra): paga el oro → mueve un oro rival a su Pagado. */
+  activateGoldChoke: (goldInstanceId: string, playerId: PlayerId) => void;
+  /** 'oro_descarta_talisman' (Aurora de Chile): destruye el oro → abre selección de talismán rival. */
+  activateGoldDiscardTalisman: (goldInstanceId: string, playerId: PlayerId) => void;
+  /** Resuelve Aurora: descarta el Talismán elegido de la mano rival. */
+  discardRivalTalisman: (talismanInstanceId: string, playerId: PlayerId) => void;
+  /** 'oro_caudillo_x3' (Primer Escudo): paga el oro → 3 oros para habilidades de Caudillos. */
+  activateGoldCaudillo: (goldInstanceId: string, playerId: PlayerId) => void;
+  /** 'mano_descarta_roba' (Bandera Patria Vieja): descarta la carta desde la mano → roba 1. */
+  handDiscardDraw: (cardInstanceId: string, playerId: PlayerId) => void;
+  /** 'mano_tutor_caudillo' (Salitre): remueve la carta desde la mano → tutor de Caudillo del Castillo. */
+  handTutorCaudillo: (cardInstanceId: string, deckIndex: number, playerId: PlayerId) => void;
   /** Resuelve el descarte obligatorio: carta de la mano → cementerio. */
   discardFromHand: (cardInstanceId: string, playerId: PlayerId) => void;
   /**
@@ -584,6 +648,9 @@ export const useGameStore = create<GameStore>()(
         // 'trigger_patriota_roba_baraja' (Arturo Prat): al entrar un Aliado
         // Patriota, su dueño decide si roba y baraja una carta del cementerio.
         maybeTriggerPatriotaEnter(card, playerId);
+
+        // 'suprime_coste1' (Bandera Transición): recalcular efecto continuo.
+        set((s) => ({ players: reapplyCostOneSuppression(s.players) }));
       },
 
       // ── Equip weapon via drag-drop ────────────────────────────────────────
@@ -1231,6 +1298,7 @@ export const useGameStore = create<GameStore>()(
               weaponTempBonuses: {},
               // Los oros virtuales 'oro_talismanes' expiran al terminar el turno.
               talismanGold: 0,
+              caudilloGold: 0,
               // 'debilitar_aliado' dura "hasta la Fase Final": expira aquí.
               weakenedAllies: [],
               // 'nombrar_raza_suprime': restaurar habilidades suprimidas.
@@ -1243,6 +1311,7 @@ export const useGameStore = create<GameStore>()(
               drawnThisTurn: false,
               goldSpentThisTurn: false,
               talismanGold: 0,
+              caudilloGold: 0,
               weaponTempBonuses: {},
               weaponAbilityUsedThisTurn: [],
               allyAbilityUsedThisTurn: [],
@@ -1405,6 +1474,222 @@ export const useGameStore = create<GameStore>()(
         if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId, pendingDiscard: null });
       },
 
+      activateGoldChoke: (goldInstanceId, playerId) => {
+        const { players, isGameOver } = get();
+        if (isGameOver) return;
+        const player = players[playerId];
+        const goldCard = player.gold.find((c) => c.instanceId === goldInstanceId);
+        if (!goldCard || !hasGoldChokeRival(goldCard)) return;
+
+        const rivalId: PlayerId = playerId === 'player' ? 'opponent' : 'player';
+        const rival = players[rivalId];
+        // El oro rival a mover: el último disponible que NO sea inmune a
+        // habilidades oponentes (p.ej. Estrella Solitaria).
+        const movable = rival.gold.filter((c) => !hasInmunidadHabilidadesOponentes(c));
+        const targetGold = movable[movable.length - 1];
+        if (!targetGold) {
+          get().addLog('El oponente no tiene Oro disponible que puedas trabar.', 'error');
+          return;
+        }
+
+        set((s) => {
+          const p = s.players[playerId];
+          const r = s.players[rivalId];
+          const remainingGold = p.gold.filter((c) => c.instanceId !== goldInstanceId);
+          const rivalRemaining = r.gold.filter((c) => c.instanceId !== targetGold.instanceId);
+          return {
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                gold: remainingGold,
+                goldPaid: [...p.goldPaid, goldCard],
+                goldCount: remainingGold.length,
+                goldSpentThisTurn: true,
+              },
+              [rivalId]: {
+                ...r,
+                gold: rivalRemaining,
+                goldPaid: [...r.goldPaid, targetGold],
+                goldCount: rivalRemaining.length,
+              },
+            },
+          };
+        });
+        get().addLog(
+          `${goldCard.nombre}: ${player.name} traba un Oro de ${rival.name} (pasa a su Zona de Oro Pagado).`,
+          'action'
+        );
+      },
+
+      activateGoldDiscardTalisman: (goldInstanceId, playerId) => {
+        const { players, isGameOver, pendingHandDiscard } = get();
+        if (isGameOver || pendingHandDiscard) return;
+        const player = players[playerId];
+        const goldCard = player.gold.find((c) => c.instanceId === goldInstanceId);
+        if (!goldCard || !hasGoldDiscardTalisman(goldCard)) return;
+
+        const rivalId: PlayerId = playerId === 'player' ? 'opponent' : 'player';
+        const rival = players[rivalId];
+        if (!rival.hand.some((c) => c.tipo === 'talisman')) {
+          get().addLog(`${rival.name} no tiene Talismanes en su mano.`, 'error');
+          return;
+        }
+
+        // Destruye el oro (al cementerio) y abre la selección de talismán rival.
+        set((s) => {
+          const p = s.players[playerId];
+          const remainingGold = p.gold.filter((c) => c.instanceId !== goldInstanceId);
+          return {
+            pendingHandDiscard: { viewerId: playerId, targetId: rivalId, sourceName: goldCard.nombre },
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                gold: remainingGold,
+                goldCount: remainingGold.length,
+                graveyard: [...p.graveyard, goldCard],
+              },
+            },
+          };
+        });
+        get().addLog(
+          `${goldCard.nombre}: ${player.name} mira la mano de ${rival.name} y le descarta un Talismán.`,
+          'action'
+        );
+      },
+
+      discardRivalTalisman: (talismanInstanceId, playerId) => {
+        const { players, pendingHandDiscard } = get();
+        if (!pendingHandDiscard || pendingHandDiscard.viewerId !== playerId) return;
+        const targetId = pendingHandDiscard.targetId;
+        const target = players[targetId];
+        const talisman = target.hand.find(
+          (c) => c.instanceId === talismanInstanceId && c.tipo === 'talisman'
+        );
+        if (!talisman) return;
+        set((s) => {
+          const t = s.players[targetId];
+          return {
+            pendingHandDiscard: null,
+            players: {
+              ...s.players,
+              [targetId]: {
+                ...t,
+                hand: t.hand.filter((c) => c.instanceId !== talismanInstanceId),
+                graveyard: [...t.graveyard, talisman],
+              },
+            },
+          };
+        });
+        get().addLog(`${target.name} descarta ${talisman.nombre} de su mano.`, 'action');
+      },
+
+      activateGoldCaudillo: (goldInstanceId, playerId) => {
+        const { players, isGameOver } = get();
+        if (isGameOver) return;
+        const player = players[playerId];
+        const goldCard = player.gold.find((c) => c.instanceId === goldInstanceId);
+        if (!goldCard || !hasCaudilloGoldAbility(goldCard)) return;
+
+        set((s) => {
+          const p = s.players[playerId];
+          const remainingGold = p.gold.filter((c) => c.instanceId !== goldInstanceId);
+          return {
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                gold: remainingGold,
+                goldPaid: [...p.goldPaid, goldCard],
+                goldCount: remainingGold.length,
+                goldSpentThisTurn: true,
+                caudilloGold: p.caudilloGold + CAUDILLO_GOLD_YIELD,
+              },
+            },
+          };
+        });
+        get().addLog(
+          `${goldCard.nombre}: ${player.name} genera ${CAUDILLO_GOLD_YIELD} Oros para habilidades de Aliados Caudillo (hasta el final del turno).`,
+          'action'
+        );
+      },
+
+      handDiscardDraw: (cardInstanceId, playerId) => {
+        const { players, turn, isGameOver } = get();
+        if (isGameOver) return;
+        const player = players[playerId];
+        if (turn.currentPlayer !== playerId) {
+          get().addLog('Solo puedes usar esta habilidad en tu turno.', 'error');
+          return;
+        }
+        const card = player.hand.find((c) => c.instanceId === cardInstanceId);
+        if (!card || !hasHandDiscardDraw(card)) return;
+        if (player.deck.length === 0) {
+          get().addLog('No quedan cartas en tu Mazo Castillo para robar.', 'error');
+          return;
+        }
+        const { drawn, remaining } = drawCards(player.deck, 1);
+        set((s) => {
+          const p = s.players[playerId];
+          return {
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                hand: [...p.hand.filter((c) => c.instanceId !== cardInstanceId), createCardInPlay(drawn[0])],
+                graveyard: [...p.graveyard, card],
+                deck: remaining,
+                life: remaining.length,
+              },
+            },
+          };
+        });
+        get().addLog(`${card.nombre}: ${player.name} la descarta y roba 1 carta.`, 'action');
+      },
+
+      handTutorCaudillo: (cardInstanceId, deckIndex, playerId) => {
+        const { players, turn, isGameOver } = get();
+        if (isGameOver) return;
+        const player = players[playerId];
+        if (turn.currentPlayer !== playerId) {
+          get().addLog('Solo puedes usar esta habilidad en tu turno.', 'error');
+          return;
+        }
+        const card = player.hand.find((c) => c.instanceId === cardInstanceId);
+        if (!card || !hasHandTutorCaudillo(card)) return;
+        const target = player.deck[deckIndex];
+        if (!target || target.tipo !== 'aliado' || target.raza !== 'Caudillo') {
+          get().addLog('Debes elegir un Aliado Caudillo de tu Castillo.', 'error');
+          return;
+        }
+        // Remueve Salitre (→ zona R), saca el Caudillo del Castillo a la mano
+        // y baraja el resto del mazo.
+        set((s) => {
+          const p = s.players[playerId];
+          const newDeck = shuffleDeck(p.deck.filter((_, i) => i !== deckIndex));
+          return {
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                hand: [
+                  ...p.hand.filter((c) => c.instanceId !== cardInstanceId),
+                  createCardInPlay(target),
+                ],
+                removed: [...p.removed, card],
+                deck: newDeck,
+                life: newDeck.length,
+              },
+            },
+          };
+        });
+        get().addLog(
+          `${card.nombre}: ${player.name} busca a ${target.nombre} (Aliado Caudillo) en su Castillo y lo pone en su mano.`,
+          'action'
+        );
+      },
+
       discardFromHand: (cardInstanceId, playerId) => {
         const { players, pendingDiscard } = get();
         if (pendingDiscard !== playerId) return;
@@ -1521,6 +1806,7 @@ export const useGameStore = create<GameStore>()(
         }
         // 'trigger_patriota_roba_baraja': entrada de Patriota desde zona.
         maybeTriggerPatriotaEnter(card, playerId);
+        set((s) => ({ players: reapplyCostOneSuppression(s.players) }));
       },
 
       equipWeaponFromZone: (weaponInstanceId, zone, allyInstanceId, playerId) => {
@@ -1682,7 +1968,7 @@ export const useGameStore = create<GameStore>()(
           (c) => c.instanceId === targetInstanceId && c.tipo === 'aliado'
         );
         if (!target) return;
-        if (hasInmunidadAliados(target)) {
+        if (immuneToAllyOrOpponentEffect(target)) {
           get().addLog(`${target.nombre} es inmune a las habilidades de Aliados.`, 'error');
           return;
         }
@@ -1880,7 +2166,7 @@ export const useGameStore = create<GameStore>()(
             (c) => c.instanceId === targetInstanceId && c.tipo !== 'oro'
           ) ?? null;
         if (!target) return;
-        if (hasInmunidadAliados(target)) {
+        if (immuneToAllyOrOpponentEffect(target)) {
           get().addLog(`${target.nombre} es inmune a las habilidades de Aliados.`, 'error');
           return;
         }
@@ -2170,7 +2456,10 @@ export const useGameStore = create<GameStore>()(
           get().addLog('Esta habilidad ya fue usada este turno.', 'error');
           return;
         }
-        if (player.goldCount < MILL_GOLD_COST) {
+        // 'oro_caudillo_x3' (Primer Escudo): fuente Caudillo puede pagar con
+        // los oros virtuales de Caudillo.
+        const caudilloAvail = source.raza === 'Caudillo' ? player.caudilloGold : 0;
+        if (player.goldCount + caudilloAvail < MILL_GOLD_COST) {
           get().addLog(`Necesitas ${MILL_GOLD_COST} oros para activar esta habilidad.`, 'error');
           return;
         }
@@ -2178,10 +2467,12 @@ export const useGameStore = create<GameStore>()(
         // Pago automático de 2 oros y apertura de la ventana de efecto: el
         // rival tiene 10 s para responder antes de que el botado se resuelva.
         const responderId: PlayerId = playerId === 'player' ? 'opponent' : 'player';
+        const fromCaudillo = Math.min(caudilloAvail, MILL_GOLD_COST);
+        const fromCards = MILL_GOLD_COST - fromCaudillo;
         set((s) => {
           const p = s.players[playerId];
-          const paid = p.gold.slice(p.gold.length - MILL_GOLD_COST);
-          const remaining = p.gold.slice(0, p.gold.length - MILL_GOLD_COST);
+          const paid = p.gold.slice(p.gold.length - fromCards);
+          const remaining = p.gold.slice(0, p.gold.length - fromCards);
           return {
             players: {
               ...s.players,
@@ -2190,7 +2481,8 @@ export const useGameStore = create<GameStore>()(
                 gold: remaining,
                 goldPaid: [...p.goldPaid, ...paid],
                 goldCount: remaining.length,
-                goldSpentThisTurn: true,
+                caudilloGold: p.caudilloGold - fromCaudillo,
+                goldSpentThisTurn: fromCards > 0 ? true : p.goldSpentThisTurn,
                 allyAbilityUsedThisTurn: [...p.allyAbilityUsedThisTurn, useKey],
               },
             },
@@ -2243,7 +2535,7 @@ export const useGameStore = create<GameStore>()(
                 c.raza === raza ||
                 (c.habilidadesEspeciales?.length ?? 0) === 0 ||
                 // 'inmunidad_aliados': inmune a esta habilidad de aliado.
-                hasInmunidadAliados(c)
+                immuneToAllyOrOpponentEffect(c)
               ) {
                 return c;
               }
@@ -2299,7 +2591,7 @@ export const useGameStore = create<GameStore>()(
 
         // 'inmunidad_aliados': el objetivo no puede ser afectado por
         // habilidades de aliados como esta.
-        if (hasInmunidadAliados(target)) {
+        if (immuneToAllyOrOpponentEffect(target)) {
           get().addLog(`${target.nombre} es inmune a las habilidades de Aliados.`, 'error');
           return;
         }
@@ -2363,7 +2655,10 @@ export const useGameStore = create<GameStore>()(
           get().addLog(`La habilidad de ${source.nombre} ya fue usada este turno.`, 'error');
           return;
         }
-        if (player.goldCount < CAUDILLO_SUMMON_GOLD_COST) {
+        // 'oro_caudillo_x3' (Primer Escudo): Luis Carrera es Caudillo, así que
+        // puede pagar la invocación con los oros virtuales de Caudillo.
+        const caudilloAvail = source.raza === 'Caudillo' ? player.caudilloGold : 0;
+        if (player.goldCount + caudilloAvail < CAUDILLO_SUMMON_GOLD_COST) {
           get().addLog(`Necesitas ${CAUDILLO_SUMMON_GOLD_COST} oros disponibles para activar esta habilidad.`, 'error');
           return;
         }
@@ -2373,9 +2668,11 @@ export const useGameStore = create<GameStore>()(
           return;
         }
 
-        // Paga 3 oros (van a la zona P) y saca la carta del Mazo Castillo.
-        const paid = player.gold.slice(player.gold.length - CAUDILLO_SUMMON_GOLD_COST);
-        const remainingGold = player.gold.slice(0, player.gold.length - CAUDILLO_SUMMON_GOLD_COST);
+        // Paga 3 oros (virtuales de Caudillo primero) y saca la carta del Castillo.
+        const fromCaudillo = Math.min(caudilloAvail, CAUDILLO_SUMMON_GOLD_COST);
+        const fromCards = CAUDILLO_SUMMON_GOLD_COST - fromCaudillo;
+        const paid = player.gold.slice(player.gold.length - fromCards);
+        const remainingGold = player.gold.slice(0, player.gold.length - fromCards);
         const newDeck = player.deck.filter((_, i) => i !== deckIndex);
 
         set((s) => ({
@@ -2392,7 +2689,8 @@ export const useGameStore = create<GameStore>()(
               gold: remainingGold,
               goldPaid: [...s.players[playerId].goldPaid, ...paid],
               goldCount: remainingGold.length,
-              goldSpentThisTurn: true,
+              caudilloGold: s.players[playerId].caudilloGold - fromCaudillo,
+              goldSpentThisTurn: fromCards > 0 ? true : s.players[playerId].goldSpentThisTurn,
               allyAbilityUsedThisTurn: [
                 ...s.players[playerId].allyAbilityUsedThisTurn,
                 sourceInstanceId,
@@ -2408,6 +2706,7 @@ export const useGameStore = create<GameStore>()(
 
         // 'trigger_patriota_roba_baraja': el invocado también dispara la entrada.
         maybeTriggerPatriotaEnter(target, playerId);
+        set((s) => ({ players: reapplyCostOneSuppression(s.players) }));
 
         const { isOver, winnerId } = checkGameOver(get().players);
         if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });

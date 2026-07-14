@@ -23,6 +23,12 @@ export function useGameActions() {
   const summonCaudilloFromDeck = useGameStore((s) => s.summonCaudilloFromDeck);
   const activateGoldTalisman = useGameStore((s) => s.activateGoldTalisman);
   const activateGoldDrawDiscard = useGameStore((s) => s.activateGoldDrawDiscard);
+  const activateGoldChoke = useGameStore((s) => s.activateGoldChoke);
+  const activateGoldDiscardTalisman = useGameStore((s) => s.activateGoldDiscardTalisman);
+  const discardRivalTalisman = useGameStore((s) => s.discardRivalTalisman);
+  const activateGoldCaudillo = useGameStore((s) => s.activateGoldCaudillo);
+  const handDiscardDraw = useGameStore((s) => s.handDiscardDraw);
+  const handTutorCaudillo = useGameStore((s) => s.handTutorCaudillo);
   const discardFromHand = useGameStore((s) => s.discardFromHand);
   const respondWithAnnul = useGameStore((s) => s.respondWithAnnul);
   const resolveShuffleChoice = useGameStore((s) => s.resolveShuffleChoice);
@@ -108,6 +114,12 @@ export function useGameActions() {
     summonCaudilloFromDeck: guarded(summonCaudilloFromDeck),
     activateGoldTalisman: ownerGated<[string]>(activateGoldTalisman),
     activateGoldDrawDiscard: ownerGated<[string]>(activateGoldDrawDiscard),
+    activateGoldChoke: ownerGated<[string]>(activateGoldChoke),
+    activateGoldDiscardTalisman: ownerGated<[string]>(activateGoldDiscardTalisman),
+    discardRivalTalisman: ownerGated<[string]>(discardRivalTalisman),
+    activateGoldCaudillo: ownerGated<[string]>(activateGoldCaudillo),
+    handDiscardDraw: guarded(handDiscardDraw),
+    handTutorCaudillo: guarded(handTutorCaudillo),
     discardFromHand: ownerGated<[string]>(discardFromHand),
     // Ventana de respuesta: el respondedor actúa fuera de su turno.
     respondWithAnnul: ownerGated<[string]>(respondWithAnnul),
