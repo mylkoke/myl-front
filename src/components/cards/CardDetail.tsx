@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { CardInPlay } from '@/types/card.types';
 import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
-import { Sword, Coins, BookOpen, Zap, User, Hash } from 'lucide-react';
+import { Sword, Coins, BookOpen, Zap, User, Hash, X } from 'lucide-react';
 
 interface CardDetailProps {
   card: CardInPlay | null;
@@ -37,6 +37,7 @@ const RARITY_VARIANT: Record<string, 'gold' | 'blue' | 'purple' | 'gray'> = {
 
 export function CardDetail({ card, isOpen, onClose, onPlay, canPlay, playLabel, onUseSpecialAbility, canUseSpecialAbility, specialAbilityLabel, abilityActions }: CardDetailProps) {
   const [imageError, setImageError] = useState(false);
+  const [imageZoomed, setImageZoomed] = useState(false);
 
   if (!card) return null;
 
@@ -50,7 +51,14 @@ export function CardDetail({ card, isOpen, onClose, onPlay, canPlay, playLabel, 
       <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
         {/* Card image */}
         <div className="flex-shrink-0 flex flex-row sm:flex-col items-center sm:items-stretch gap-3 sm:gap-0">
-          <div className="w-28 h-[154px] sm:w-32 sm:h-44 flex-shrink-0 rounded-lg overflow-hidden border-2 border-yellow-500/30 shadow-xl">
+          <div
+            onClick={imageError ? undefined : () => setImageZoomed(true)}
+            title={imageError ? undefined : 'Ver la carta en grande'}
+            className={[
+              'w-28 h-[154px] sm:w-32 sm:h-44 flex-shrink-0 rounded-lg overflow-hidden border-2 border-yellow-500/30 shadow-xl',
+              imageError ? '' : 'cursor-pointer hover:brightness-110 transition-all',
+            ].join(' ')}
+          >
             {imageError ? (
               <div className="w-full h-full bg-slate-700 flex items-center justify-center text-4xl text-slate-400">
                 {card.tipo[0].toUpperCase()}
@@ -181,6 +189,29 @@ export function CardDetail({ card, isOpen, onClose, onPlay, canPlay, playLabel, 
               {canPlay ? (playLabel ?? `Jugar ${card.nombre}`) : 'No puedes jugar esta carta ahora'}
             </button>
           )}
+        </div>
+      )}
+
+      {/* Visor a pantalla completa del diseño de la carta */}
+      {imageZoomed && !imageError && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-4 cursor-zoom-out"
+          onClick={(e) => {
+            e.stopPropagation();
+            setImageZoomed(false);
+          }}
+        >
+          <button
+            onClick={() => setImageZoomed(false)}
+            className="absolute top-3 right-3 p-2 rounded-full bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
+          >
+            <X size={18} />
+          </button>
+          <img
+            src={card.imagen}
+            alt={card.nombre}
+            className="max-w-full max-h-full object-contain rounded-xl shadow-2xl"
+          />
         </div>
       )}
     </Modal>
