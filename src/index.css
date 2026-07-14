@@ -5,6 +5,13 @@
     box-sizing: border-box;
   }
 
+  /* Tailwind v4 quitó el cursor pointer por defecto de los botones;
+     lo restauramos globalmente (los deshabilitados mantienen su cursor). */
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
   body {
     margin: 0;
     padding: 0;
