@@ -21,6 +21,7 @@ export function snapshotGameState(): GameState {
     pendingTypeChoice: s.pendingTypeChoice,
     pendingPatriotaTrigger: s.pendingPatriotaTrigger,
     pendingHandDiscard: s.pendingHandDiscard,
+    pendingCopyTutor: s.pendingCopyTutor,
     responseWindow: s.responseWindow,
     fxLightning: s.fxLightning,
   };

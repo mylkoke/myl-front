@@ -400,6 +400,22 @@ export const SEED_ABILITIES = [
     tipos: ['oro'],
   },
   {
+    code: 'mercenario',
+    nombre: 'Mercenario',
+    descripcion: 'Restricción de construcción de mazo (opuesta a Única/Orbe): puedes incluir CUALQUIER cantidad de copias de esta carta en tu Mazo Castillo, rompiendo el límite general de 3 copias.',
+    implemented: true,
+    categoria: 'especial',
+    tipos: ['aliado', 'totem', 'arma', 'talisman', 'oro'],
+  },
+  {
+    code: 'busca_copia_entra',
+    nombre: 'Al entrar: busca una copia',
+    descripcion: 'Cuando esta carta entra en juego, puedes buscar una copia de esta misma carta en tu Castillo o Cementerio y ponerla en tu Mano (solo una).',
+    implemented: true,
+    categoria: 'carta',
+    tipos: ['aliado', 'totem', 'arma', 'oro'],
+  },
+  {
     code: 'debilita_atacantes_bloqueo',
     nombre: 'Al bloquear: debilita atacantes',
     descripcion: 'Cada vez que este Aliado bloquee, todos los Aliados atacantes pierden X a la Fuerza hasta la Fase Final, donde X es igual a la Fuerza (efectiva) de esta carta.',

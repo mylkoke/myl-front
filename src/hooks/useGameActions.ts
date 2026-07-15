@@ -39,6 +39,8 @@ export function useGameActions() {
   const resolveTypeChoice = useGameStore((s) => s.resolveTypeChoice);
   const resolvePatriotaTrigger = useGameStore((s) => s.resolvePatriotaTrigger);
   const pickPatriotaGraveyardCard = useGameStore((s) => s.pickPatriotaGraveyardCard);
+  const tutorCopyFromZone = useGameStore((s) => s.tutorCopyFromZone);
+  const cancelCopyTutor = useGameStore((s) => s.cancelCopyTutor);
   const equipWeaponFromZone = useGameStore((s) => s.equipWeaponFromZone);
   const passResponse = useGameStore((s) => s.passResponse);
   const closeResponseWindow = useGameStore((s) => s.closeResponseWindow);
@@ -130,6 +132,8 @@ export function useGameActions() {
     // 'trigger_patriota_roba_baraja' puede resolverse fuera de turno (Relámpago).
     resolvePatriotaTrigger: ownerGated<[boolean]>(resolvePatriotaTrigger),
     pickPatriotaGraveyardCard: ownerGated<[string]>(pickPatriotaGraveyardCard),
+    tutorCopyFromZone: ownerGated<['deck' | 'graveyard', number | string]>(tutorCopyFromZone),
+    cancelCopyTutor: ownerGated<[]>(cancelCopyTutor),
     swapControl: ownerGated<[string, string, PlayerId]>(swapControl),
     passResponse: ownerGated<[]>(passResponse),
     closeResponseWindow: () => {

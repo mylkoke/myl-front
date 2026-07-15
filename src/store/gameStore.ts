@@ -32,6 +32,7 @@ import {
   hasCombatExileAll,
   hasBlockWeakenAll,
   hasControlSwap,
+  hasCopySearchOnEnter,
   hasIndesterrable,
   immuneToAllyOrOpponentEffect,
   hasInmunidadHabilidadesOponentes,
@@ -223,6 +224,7 @@ export function buildInitialState(
     pendingTypeChoice: null,
     pendingPatriotaTrigger: null,
     pendingHandDiscard: null,
+    pendingCopyTutor: null,
     responseWindow: null,
     fxLightning: null,
     gameLog: [
@@ -409,6 +411,17 @@ interface GameActions {
   resolvePatriotaTrigger: (accept: boolean, playerId: PlayerId) => void;
   /** Paso 2 del trigger: mueve la carta elegida del Cementerio al Castillo y baraja. */
   pickPatriotaGraveyardCard: (cardInstanceId: string, playerId: PlayerId) => void;
+  /**
+   * 'busca_copia_entra' (Escudo Nacional Mercenario): saca una copia propia
+   * del Castillo (por índice) o del Cementerio (por instanceId) a la mano.
+   */
+  tutorCopyFromZone: (
+    zone: 'deck' | 'graveyard',
+    ref: number | string,
+    playerId: PlayerId,
+  ) => void;
+  /** Cierra la búsqueda de copia sin sacar ninguna. */
+  cancelCopyTutor: (playerId: PlayerId) => void;
   /** Replace the whole game state (online sync). */
   hydrateState: (state: GameState) => void;
   addLog: (msg: string, type?: GameLogEntry['type']) => void;
@@ -649,6 +662,19 @@ export const useGameStore = create<GameStore>()(
         // 'trigger_patriota_roba_baraja' (Arturo Prat): al entrar un Aliado
         // Patriota, su dueño decide si roba y baraja una carta del cementerio.
         maybeTriggerPatriotaEnter(card, playerId);
+
+        // 'busca_copia_entra' (Escudo Nacional Mercenario): al entrar, si hay
+        // copias de esta misma carta en el Castillo o Cementerio, abrir la
+        // búsqueda de una copia para la mano.
+        if (!get().isGameOver && hasCopySearchOnEnter(card)) {
+          const p2 = get().players[playerId];
+          const hasCopy =
+            p2.deck.some((c) => c.id === card.id) ||
+            p2.graveyard.some((c) => c.id === card.id);
+          if (hasCopy) {
+            set({ pendingCopyTutor: { playerId, cardId: card.id, cardName: card.nombre } });
+          }
+        }
 
         // 'suprime_coste1' (Bandera Transición): recalcular efecto continuo.
         set((s) => ({ players: reapplyCostOneSuppression(s.players) }));
@@ -2133,6 +2159,69 @@ export const useGameStore = create<GameStore>()(
           `${pendingPatriotaTrigger.sourceName}: ${player.name} baraja ${card.nombre} desde el Cementerio en su Castillo.`,
           'action'
         );
+      },
+
+      tutorCopyFromZone: (zone, ref, playerId) => {
+        const { players, pendingCopyTutor } = get();
+        if (!pendingCopyTutor || pendingCopyTutor.playerId !== playerId) return;
+        const player = players[playerId];
+
+        if (zone === 'deck') {
+          const idx = ref as number;
+          const card = player.deck[idx];
+          if (!card || card.id !== pendingCopyTutor.cardId) return;
+          set((s) => {
+            const p = s.players[playerId];
+            // Sacar la copia del Castillo y barajar el resto (mirar el mazo lo baraja).
+            const newDeck = shuffleDeck(p.deck.filter((_, i) => i !== idx));
+            return {
+              pendingCopyTutor: null,
+              players: {
+                ...s.players,
+                [playerId]: {
+                  ...p,
+                  deck: newDeck,
+                  hand: [...p.hand, createCardInPlay(card)],
+                  life: newDeck.length,
+                },
+              },
+            };
+          });
+          get().addLog(
+            `${pendingCopyTutor.cardName}: ${player.name} busca una copia en su Castillo y la pone en su mano.`,
+            'action'
+          );
+        } else {
+          const instanceId = ref as string;
+          const card = player.graveyard.find(
+            (c) => c.instanceId === instanceId && c.id === pendingCopyTutor.cardId
+          );
+          if (!card) return;
+          set((s) => {
+            const p = s.players[playerId];
+            return {
+              pendingCopyTutor: null,
+              players: {
+                ...s.players,
+                [playerId]: {
+                  ...p,
+                  graveyard: p.graveyard.filter((c) => c.instanceId !== instanceId),
+                  hand: [...p.hand, { ...card }],
+                },
+              },
+            };
+          });
+          get().addLog(
+            `${pendingCopyTutor.cardName}: ${player.name} recupera una copia de su Cementerio y la pone en su mano.`,
+            'action'
+          );
+        }
+      },
+
+      cancelCopyTutor: (playerId) => {
+        const { pendingCopyTutor } = get();
+        if (!pendingCopyTutor || pendingCopyTutor.playerId !== playerId) return;
+        set({ pendingCopyTutor: null });
       },
 
       resolveTypeChoice: (tipo, playerId) => {

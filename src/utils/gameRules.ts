@@ -101,8 +101,27 @@ export function hasOrbe(card: Card): boolean {
   return card.habilidadesEspeciales?.includes('orbe') ?? false;
 }
 
-/** Max copies of `card` allowed in a deck ('unica' y 'orbe' → 1). */
+/**
+ * "Mercenario": deck-building keyword, the opposite of Única/Orbe — you may
+ * include ANY number of copies of this card in your castle deck (breaks the
+ * general 3-copy limit).
+ */
+export function hasMercenario(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('mercenario') ?? false;
+}
+
+/**
+ * 'busca_copia_entra' (Escudo Nacional Mercenario): when this card enters
+ * play, its owner may search a copy of itself (same card id) in the Castillo
+ * or Cementerio and put it in hand.
+ */
+export function hasCopySearchOnEnter(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('busca_copia_entra') ?? false;
+}
+
+/** Max copies of `card` allowed in a deck ('unica'/'orbe' → 1; 'mercenario' → ∞). */
 export function maxCopiesInDeck(card: Card): number {
+  if (hasMercenario(card)) return Infinity;
   return hasUnica(card) || hasOrbe(card) ? 1 : MAX_COPIES_PER_CARD;
 }
 

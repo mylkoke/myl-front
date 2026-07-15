@@ -54,10 +54,12 @@ export function GameBoard() {
   const cancelTargeting = useTargetingStore((s) => s.cancel);
   const pendingDiscard = useGameStore((s) => s.pendingDiscard);
   const pendingHandDiscard = useGameStore((s) => s.pendingHandDiscard);
+  const pendingCopyTutor = useGameStore((s) => s.pendingCopyTutor);
   const responseWindow = useGameStore((s) => s.responseWindow);
   const { discardFromHand, respondWithAnnul, passResponse, closeResponseWindow, resolveShuffleChoice,
     resolveSwapChoice, resolveTypeChoice, resolvePatriotaTrigger, pickPatriotaGraveyardCard,
-    discardRivalTalisman, playCard: playCardAction } = useGameActions();
+    discardRivalTalisman, tutorCopyFromZone, cancelCopyTutor,
+    playCard: playCardAction } = useGameActions();
   const pendingSwapChoice = useGameStore((s) => s.pendingSwapChoice);
   const pendingTypeChoice = useGameStore((s) => s.pendingTypeChoice);
   const startSwap = useTargetingStore((s) => s.startSwap);
@@ -731,6 +733,63 @@ export function GameBoard() {
           </div>
         </div>
       )}
+
+      {/* ── Escudo Nacional Mercenario: buscar una copia propia ────────── */}
+      {pendingCopyTutor && (!isOnline || mySeat === pendingCopyTutor.playerId) && (() => {
+        const p = players[pendingCopyTutor.playerId];
+        const deckCopies = p.deck
+          .map((c, i) => ({ c, i }))
+          .filter(({ c }) => c.id === pendingCopyTutor.cardId);
+        const graveCopies = p.graveyard.filter((c) => c.id === pendingCopyTutor.cardId);
+        return (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
+            <div className="w-full max-w-md bg-slate-900 border border-yellow-500/40 rounded-2xl p-4 sm:p-6 shadow-2xl">
+              <div className="text-center mb-3">
+                <div className="text-yellow-300 text-xs uppercase tracking-widest font-bold">
+                  {pendingCopyTutor.cardName}
+                </div>
+                <p className="text-slate-300 text-sm mt-1">
+                  Busca una copia en tu Castillo o Cementerio y ponla en tu mano
+                  (elige solo una).
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 max-h-64 overflow-y-auto mb-3">
+                {deckCopies.map(({ c, i }) => (
+                  <div key={`deck-${i}`} className="relative">
+                    <span className="absolute -top-1.5 left-1/2 -translate-x-1/2 z-10 bg-slate-700 text-cyan-300 text-[7px] font-bold px-1 rounded-full whitespace-nowrap">
+                      Castillo
+                    </span>
+                    <CardView
+                      card={{ ...c, instanceId: `copy-deck-${i}`, tapped: false, attackedThisTurn: false, summonedThisTurn: false }}
+                      size="sm"
+                      onClick={() => tutorCopyFromZone('deck', i, pendingCopyTutor.playerId)}
+                    />
+                  </div>
+                ))}
+                {graveCopies.map((c) => (
+                  <div key={c.instanceId} className="relative">
+                    <span className="absolute -top-1.5 left-1/2 -translate-x-1/2 z-10 bg-slate-700 text-slate-300 text-[7px] font-bold px-1 rounded-full whitespace-nowrap">
+                      Cementerio
+                    </span>
+                    <CardView
+                      card={c}
+                      size="sm"
+                      onClick={() => tutorCopyFromZone('graveyard', c.instanceId, pendingCopyTutor.playerId)}
+                    />
+                  </div>
+                ))}
+              </div>
+              <Button
+                variant="secondary"
+                fullWidth
+                onClick={() => cancelCopyTutor(pendingCopyTutor.playerId)}
+              >
+                No buscar
+              </Button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Aurora de Chile: descartar un Talismán de la mano rival ────── */}
       {pendingHandDiscard && (!isOnline || mySeat === pendingHandDiscard.viewerId) && (

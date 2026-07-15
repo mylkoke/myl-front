@@ -177,6 +177,12 @@ export interface GameState {
    * descartar. Se sincroniza online.
    */
   pendingHandDiscard: { viewerId: PlayerId; targetId: PlayerId; sourceName: string } | null;
+  /**
+   * Búsqueda de copia propia de 'busca_copia_entra' (Escudo Nacional
+   * Mercenario): al entrar, su dueño puede buscar una copia (mismo cardId)
+   * en el Castillo o Cementerio y ponerla en su mano. Se sincroniza online.
+   */
+  pendingCopyTutor: { playerId: PlayerId; cardId: string; cardName: string } | null;
   responseWindow: {
     /** Carta recién jugada (ya en su zona) que puede ser anulada */
     cardInstanceId: string;
