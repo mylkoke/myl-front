@@ -33,6 +33,8 @@ import {
   hasBlockWeakenAll,
   hasControlSwap,
   hasCopySearchOnEnter,
+  hasEnterDraw3,
+  isIndestructibleEffective,
   hasIndesterrable,
   immuneToAllyOrOpponentEffect,
   hasInmunidadHabilidadesOponentes,
@@ -175,6 +177,32 @@ function reapplyCostOneSuppression(
  * si su dueño controla una carta con la habilidad, abre la decisión de usar
  * el efecto. Se llama desde runtime (useGameStore ya existe).
  */
+/**
+ * 'entra_roba3' (José Miguel Carrera): al entrar en juego, su dueño roba 3
+ * cartas de su Mazo Castillo automáticamente. Se llama desde runtime.
+ */
+function maybeDrawOnEnter(card: Card, playerId: PlayerId): void {
+  if (card.tipo !== 'aliado' || !hasEnterDraw3(card)) return;
+  const st = useGameStore.getState();
+  if (st.isGameOver) return;
+  const p = st.players[playerId];
+  if (p.deck.length === 0) return;
+  const n = Math.min(3, p.deck.length);
+  const { drawn, remaining } = drawCards(p.deck, n);
+  useGameStore.setState({
+    players: {
+      ...st.players,
+      [playerId]: {
+        ...p,
+        deck: remaining,
+        hand: [...p.hand, ...drawn.map(createCardInPlay)],
+        life: remaining.length,
+      },
+    },
+  });
+  useGameStore.getState().addLog(`${card.nombre}: ${p.name} roba ${n} cartas al entrar en juego.`, 'action');
+}
+
 function maybeTriggerPatriotaEnter(card: Card, playerId: PlayerId): void {
   if (card.tipo !== 'aliado' || card.raza !== 'Patriota') return;
   const st = useGameStore.getState();
@@ -662,6 +690,7 @@ export const useGameStore = create<GameStore>()(
         // 'trigger_patriota_roba_baraja' (Arturo Prat): al entrar un Aliado
         // Patriota, su dueño decide si roba y baraja una carta del cementerio.
         maybeTriggerPatriotaEnter(card, playerId);
+        maybeDrawOnEnter(card, playerId);
 
         // 'busca_copia_entra' (Escudo Nacional Mercenario): al entrar, si hay
         // copias de esta misma carta en el Castillo o Cementerio, abrir la
@@ -1002,9 +1031,9 @@ export const useGameStore = create<GameStore>()(
           const inDefense = owner.defenseField.find((c) => c.instanceId === instanceId);
           const card = inAttack ?? inDefense;
           if (!card) return owner;
-          // 'indestructible' sobrevive a la destrucción; 'no_sale_del_juego'
-          // no puede abandonar el campo por ningún medio.
-          if (hasIndestructible(card) || cannotLeavePlay(card)) return owner;
+          // 'indestructible' (propio u otorgado) sobrevive a la destrucción;
+          // 'no_sale_del_juego' no puede abandonar el campo por ningún medio.
+          if (isIndestructibleEffective(card, owner) || cannotLeavePlay(card)) return owner;
           const weapon = owner.equippedWeapons[instanceId];
           const { [instanceId]: _, ...restWeapons } = owner.equippedWeapons;
           return {
@@ -1856,6 +1885,7 @@ export const useGameStore = create<GameStore>()(
         }
         // 'trigger_patriota_roba_baraja': entrada de Patriota desde zona.
         maybeTriggerPatriotaEnter(card, playerId);
+        maybeDrawOnEnter(card, playerId);
         set((s) => ({ players: reapplyCostOneSuppression(s.players) }));
       },
 
@@ -2022,7 +2052,7 @@ export const useGameStore = create<GameStore>()(
           get().addLog(`${target.nombre} es inmune a las habilidades de Aliados.`, 'error');
           return;
         }
-        if (hasIndestructible(target) || cannotLeavePlay(target)) {
+        if (isIndestructibleEffective(target, targetOwner) || cannotLeavePlay(target)) {
           get().addLog(`${target.nombre} no puede ser destruido.`, 'error');
           return;
         }
@@ -2819,6 +2849,7 @@ export const useGameStore = create<GameStore>()(
 
         // 'trigger_patriota_roba_baraja': el invocado también dispara la entrada.
         maybeTriggerPatriotaEnter(target, playerId);
+        maybeDrawOnEnter(target, playerId);
         set((s) => ({ players: reapplyCostOneSuppression(s.players) }));
 
         const { isOver, winnerId } = checkGameOver(get().players);

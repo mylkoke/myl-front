@@ -400,6 +400,22 @@ export const SEED_ABILITIES = [
     tipos: ['oro'],
   },
   {
+    code: 'otorga_indestructible_patriotas',
+    nombre: 'Otorga Indestructible a Patriotas',
+    descripcion: 'Mientras esta carta esté en juego, los Aliados de raza Patriota que controle su propietario son Indestructibles.',
+    implemented: true,
+    categoria: 'carta',
+    tipos: ['aliado'],
+  },
+  {
+    code: 'entra_roba3',
+    nombre: 'Al entrar: roba 3',
+    descripcion: 'Cuando esta carta entra en juego, su propietario roba 3 cartas de su Mazo Castillo.',
+    implemented: true,
+    categoria: 'carta',
+    tipos: ['aliado'],
+  },
+  {
     code: 'mercenario',
     nombre: 'Mercenario',
     descripcion: 'Restricción de construcción de mazo (opuesta a Única/Orbe): puedes incluir CUALQUIER cantidad de copias de esta carta en tu Mazo Castillo, rompiendo el límite general de 3 copias.',

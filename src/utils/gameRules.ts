@@ -720,6 +720,33 @@ export function hasIndestructible(card: Card): boolean {
 }
 
 /**
+ * 'otorga_indestructible_patriotas' (José Miguel Carrera): while this card is
+ * in play, the controller's Patriota allies are Indestructible.
+ */
+export function grantsIndestructiblePatriotas(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('otorga_indestructible_patriotas') ?? false;
+}
+
+/**
+ * Effective Indestructible for `card` controlled by `owner`: its own ability,
+ * or granted because it is a Patriota ally and its controller has a card with
+ * 'otorga_indestructible_patriotas' in play.
+ */
+export function isIndestructibleEffective(card: Card, owner: PlayerState): boolean {
+  if (hasIndestructible(card)) return true;
+  return (
+    card.tipo === 'aliado' &&
+    card.raza === 'Patriota' &&
+    [...owner.defenseField, ...owner.attackField].some(grantsIndestructiblePatriotas)
+  );
+}
+
+/** 'entra_roba3' (José Miguel Carrera): on entering play, its owner draws 3 cards. */
+export function hasEnterDraw3(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('entra_roba3') ?? false;
+}
+
+/**
  * "Indesterrable": while on the battlefield, no ability or effect can send
  * this card to the Exile zone (D — Destierro). Targeted banish effects may
  * still pick it, but the banish fails on resolution; global "banish all"
