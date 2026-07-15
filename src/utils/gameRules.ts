@@ -681,11 +681,58 @@ export function effectiveForce(
   }
   return (
     ally.fuerza +
-    (owner.equippedWeapons[ally.instanceId]?.bonusFuerza ?? 0) +
+    weaponForceBonus(ally, owner) +
     (owner.weaponTempBonuses[ally.instanceId] ?? 0) +
     patriotaBonus(ally, owner, players) +
     graveyardForceBonus(ally, owner)
   );
+}
+
+/** Armas equipadas a un aliado (lista; vacía si no tiene). */
+export function weaponsOf(owner: PlayerState, allyInstanceId: string): CardInPlay[] {
+  return owner.equippedWeapons[allyInstanceId] ?? [];
+}
+
+/** 'sin_limite_armas' (Ramón Freire): tus Aliados Patriota no tienen límite de Armas. */
+export function hasNoWeaponLimit(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('sin_limite_armas') ?? false;
+}
+
+/** 'bonus_fuerza_con_arma' (Ramón Freire): tus Aliados con Arma ganan +4 Fuerza. */
+export function hasWeaponForceBonus(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('bonus_fuerza_con_arma') ?? false;
+}
+
+/** +Fuerza que otorga 'bonus_fuerza_con_arma' a un aliado que porta arma(s). */
+export const WEAPON_FORCE_BONUS = 4;
+
+/**
+ * ¿`ally` (Patriota del controlador) tiene el límite de armas desbloqueado?
+ * True si su dueño controla una carta con 'sin_limite_armas' (Ramón Freire).
+ */
+export function weaponLimitUnlocked(ally: CardInPlay, owner: PlayerState): boolean {
+  return (
+    ally.tipo === 'aliado' &&
+    ally.raza === 'Patriota' &&
+    [...owner.defenseField, ...owner.attackField].some(hasNoWeaponLimit)
+  );
+}
+
+/**
+ * Bono total de Fuerza que las armas dan a `ally`: suma de `bonusFuerza` de
+ * todas sus armas equipadas + WEAPON_FORCE_BONUS si su dueño controla una
+ * carta con 'bonus_fuerza_con_arma' (Ramón Freire) y el aliado porta ≥1 arma.
+ */
+export function weaponForceBonus(ally: CardInPlay, owner: PlayerState): number {
+  const weapons = weaponsOf(owner, ally.instanceId);
+  let bonus = weapons.reduce((s, w) => s + (w.bonusFuerza ?? 0), 0);
+  if (
+    weapons.length > 0 &&
+    [...owner.defenseField, ...owner.attackField].some(hasWeaponForceBonus)
+  ) {
+    bonus += WEAPON_FORCE_BONUS;
+  }
+  return bonus;
 }
 
 /**
@@ -752,6 +799,31 @@ export function hasEnterDraw3(card: Card): boolean {
  */
 export function hasSelfSummonFromDeck(card: Card): boolean {
   return card.habilidadesEspeciales?.includes('invoca_copia_gratis') ?? false;
+}
+
+/** 'entra_agrupa3' (Héroes de Chile): on entering play, regroup up to 3 golds. */
+export function hasEnterRegroup3(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('entra_agrupa3') ?? false;
+}
+
+/**
+ * 'suprime_no_caudillo_patriota' (Héroes de Chile): while in play, every ally
+ * that is NOT raza Caudillo nor Patriota loses its abilities (continuous).
+ */
+export function hasRaceSuppressNonCP(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('suprime_no_caudillo_patriota') ?? false;
+}
+
+/** Is any 'suprime_no_caudillo_patriota' card in play? */
+export function raceSuppressNonCPActive(players: Record<PlayerId, PlayerState>): boolean {
+  return Object.values(players).some((p) =>
+    [...p.defenseField, ...p.attackField, ...p.supportField, ...p.gold].some(hasRaceSuppressNonCP),
+  );
+}
+
+/** 'destruye_no_oro' (Héroes de Chile): once per turn, destroy a non-gold card in play. */
+export function hasDestroyNonGold(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('destruye_no_oro') ?? false;
 }
 
 /**
@@ -826,16 +898,65 @@ export function isSummonableByCaudillo(target: Card, source: Card): boolean {
   );
 }
 
+/** Cost/reach of 'invoca_caudillo_barato' (Diego Portales HC-20). */
+export const CHEAP_CAUDILLO_GOLD_COST = 2;
+export const CHEAP_CAUDILLO_MAX_COST = 3;
+
+/**
+ * 'invoca_caudillo_barato' (Diego Portales): once per turn, pay 2 gold to play
+ * ANY Caudillo ally with coste ≤ 3 from the castle deck, free of its cost.
+ */
+export function hasCheapCaudilloSummon(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('invoca_caudillo_barato') ?? false;
+}
+
+/** Is `target` a valid 'invoca_caudillo_barato' pick? Caudillo ally, coste ≤ 3. */
+export function isCheapCaudilloTarget(target: Card): boolean {
+  return (
+    target.tipo === 'aliado' &&
+    target.raza === 'Caudillo' &&
+    target.coste <= CHEAP_CAUDILLO_MAX_COST
+  );
+}
+
+/**
+ * 'fase_final_roba2' (Diego Portales): at the start of its controller's Final
+ * Phase, they may draw 2 cards.
+ */
+export function hasFinalDraw2(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('fase_final_roba2') ?? false;
+}
+
 /**
  * Pure function: can this ally declare an attack?
  * Each ally attacks at most once per its owner's turn; allies with the
  * 'defensor' special ability cannot attack at all; a freshly summoned ally
  * cannot attack unless it has the 'furia' special ability.
  */
+/**
+ * 'otorga_furia_patriotas' (Isabel Riquelme): while in play, the controller's
+ * Patriota allies have Furia (can attack the turn they enter).
+ */
+export function grantsFuriaPatriotas(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('otorga_furia_patriotas') ?? false;
+}
+
+/** Effective Furia: own ability, or granted to a Patriota by Isabel Riquelme. */
+export function hasFuriaEffective(card: Card, owner?: PlayerState): boolean {
+  if (hasFuria(card)) return true;
+  if (!owner) return false;
+  return (
+    card.tipo === 'aliado' &&
+    card.raza === 'Patriota' &&
+    [...owner.defenseField, ...owner.attackField].some(grantsFuriaPatriotas)
+  );
+}
+
 export function canDeclareAttack(
   card: CardInPlay,
   turn: TurnState,
-  ownerId: string
+  ownerId: string,
+  owner?: PlayerState,
 ): { allowed: boolean; reason?: string } {
   if (turn.currentPlayer !== ownerId) {
     return { allowed: false, reason: 'Solo puedes atacar en tu turno' };
@@ -849,7 +970,7 @@ export function canDeclareAttack(
   if (hasDefensor(card)) {
     return { allowed: false, reason: 'Este aliado es Defensor: no puede atacar' };
   }
-  if (card.summonedThisTurn && !hasFuria(card)) {
+  if (card.summonedThisTurn && !hasFuriaEffective(card, owner)) {
     return {
       allowed: false,
       reason: 'Este aliado acaba de entrar en juego: no puede atacar este turno',

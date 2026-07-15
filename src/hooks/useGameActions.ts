@@ -43,11 +43,14 @@ export function useGameActions() {
   const cancelCopyTutor = useGameStore((s) => s.cancelCopyTutor);
   const resolveSelfSummon = useGameStore((s) => s.resolveSelfSummon);
   const cancelSelfSummon = useGameStore((s) => s.cancelSelfSummon);
+  const summonCheapCaudillo = useGameStore((s) => s.summonCheapCaudillo);
+  const resolveFinalDraw = useGameStore((s) => s.resolveFinalDraw);
   const equipWeaponFromZone = useGameStore((s) => s.equipWeaponFromZone);
   const passResponse = useGameStore((s) => s.passResponse);
   const closeResponseWindow = useGameStore((s) => s.closeResponseWindow);
   const weakenAlly = useGameStore((s) => s.weakenAlly);
   const millDestroyAlly = useGameStore((s) => s.millDestroyAlly);
+  const destroyNonGoldCard = useGameStore((s) => s.destroyNonGoldCard);
   const playFromZone = useGameStore((s) => s.playFromZone);
   const playRecycledTalisman = useGameStore((s) => s.playRecycledTalisman);
 
@@ -138,6 +141,8 @@ export function useGameActions() {
     cancelCopyTutor: ownerGated<[]>(cancelCopyTutor),
     resolveSelfSummon: ownerGated<[number]>(resolveSelfSummon),
     cancelSelfSummon: ownerGated<[]>(cancelSelfSummon),
+    summonCheapCaudillo: guarded(summonCheapCaudillo),
+    resolveFinalDraw: ownerGated<[boolean]>(resolveFinalDraw),
     swapControl: ownerGated<[string, string, PlayerId]>(swapControl),
     passResponse: ownerGated<[]>(passResponse),
     closeResponseWindow: () => {
@@ -146,6 +151,7 @@ export function useGameActions() {
     },
     weakenAlly:    guarded(weakenAlly),
     millDestroyAlly: guarded(millDestroyAlly),
+    destroyNonGoldCard: guarded(destroyNonGoldCard),
     activateMillGold: guarded(activateMillGold),
     chooseRaceSuppress: guarded(chooseRaceSuppress),
     playFromZone:  guarded(playFromZone),

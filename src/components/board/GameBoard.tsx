@@ -51,16 +51,19 @@ export function GameBoard() {
     passCombat, playCombatTalisman } = useGameActions();
   const weakenTargeting = useTargetingStore((s) => s.weaken);
   const destroyTargeting = useTargetingStore((s) => s.destroy);
+  const destroyAnyTargeting = useTargetingStore((s) => s.destroyAny);
   const cancelTargeting = useTargetingStore((s) => s.cancel);
   const pendingDiscard = useGameStore((s) => s.pendingDiscard);
   const pendingHandDiscard = useGameStore((s) => s.pendingHandDiscard);
   const pendingCopyTutor = useGameStore((s) => s.pendingCopyTutor);
   const pendingSelfSummon = useGameStore((s) => s.pendingSelfSummon);
+  const pendingFinalDraw = useGameStore((s) => s.pendingFinalDraw);
   const responseWindow = useGameStore((s) => s.responseWindow);
   const { discardFromHand, respondWithAnnul, passResponse, closeResponseWindow, resolveShuffleChoice,
     resolveSwapChoice, resolveTypeChoice, resolvePatriotaTrigger, pickPatriotaGraveyardCard,
     discardRivalTalisman, tutorCopyFromZone, cancelCopyTutor,
-    resolveSelfSummon, cancelSelfSummon, playCard: playCardAction } = useGameActions();
+    resolveSelfSummon, cancelSelfSummon, resolveFinalDraw,
+    playCard: playCardAction } = useGameActions();
   const pendingSwapChoice = useGameStore((s) => s.pendingSwapChoice);
   const pendingTypeChoice = useGameStore((s) => s.pendingTypeChoice);
   const startSwap = useTargetingStore((s) => s.startSwap);
@@ -735,6 +738,36 @@ export function GameBoard() {
         </div>
       )}
 
+      {/* ── Diego Portales: robar 2 al comienzo de la Fase Final ───────── */}
+      {pendingFinalDraw && (!isOnline || mySeat === pendingFinalDraw.playerId) && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
+          <div className="w-full max-w-sm bg-slate-900 border border-emerald-500/40 rounded-2xl p-4 sm:p-6 shadow-2xl text-center">
+            <div className="text-emerald-300 text-xs uppercase tracking-widest font-bold">
+              {pendingFinalDraw.sourceName}
+            </div>
+            <p className="text-slate-300 text-sm mt-2 mb-4">
+              Comienzo de tu Fase Final. ¿Robar 2 cartas del Mazo Castillo?
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="primary"
+                fullWidth
+                onClick={() => resolveFinalDraw(true, pendingFinalDraw.playerId)}
+              >
+                Sí, robar 2
+              </Button>
+              <Button
+                variant="secondary"
+                fullWidth
+                onClick={() => resolveFinalDraw(false, pendingFinalDraw.playerId)}
+              >
+                No
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── San Martín: jugar una copia propia desde el Castillo gratis ── */}
       {pendingSelfSummon && (!isOnline || mySeat === pendingSelfSummon.playerId) && (() => {
         const p = players[pendingSelfSummon.playerId];
@@ -897,12 +930,14 @@ export function GameBoard() {
       )}
 
       {/* ── Targeting banner: eligiendo objetivo (debilitar / destruir) ── */}
-      {(weakenTargeting || destroyTargeting) && (
+      {(weakenTargeting || destroyTargeting || destroyAnyTargeting) && (
         <div className="absolute top-14 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 border border-red-500/50 rounded-full px-4 py-2 flex items-center gap-3 shadow-xl">
           <span className="text-xs text-red-300 font-bold">
             {weakenTargeting
               ? 'Elige un aliado: tendrá Fuerza 0 hasta la Fase Final'
-              : 'Elige un aliado: será destruido (botas 3 cartas de tu Castillo)'}
+              : destroyTargeting
+              ? 'Elige un aliado: será destruido (botas 3 cartas de tu Castillo)'
+              : 'Elige una carta en juego (no Oro): será destruida'}
           </span>
           <button
             onClick={cancelTargeting}

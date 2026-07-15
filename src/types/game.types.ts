@@ -47,7 +47,12 @@ export interface PlayerState {
   exile: CardInPlay[];
 
   /** Armas equipadas: key = instanceId del aliado, value = arma */
-  equippedWeapons: Record<string, CardInPlay>;
+  /**
+   * Armas equipadas por aliado: key = instanceId del aliado → LISTA de armas.
+   * Normalmente 1 arma; los Patriotas con 'sin_limite_armas' (Ramón Freire)
+   * pueden portar varias, sumando bonos.
+   */
+  equippedWeapons: Record<string, CardInPlay[]>;
   /** Bonos de fuerza temporales activos (hasta Fase Final): key = allyInstanceId */
   weaponTempBonuses: Record<string, number>;
   /** instanceIds de armas cuya habilidad activada ya se usó este turno */
@@ -189,6 +194,11 @@ export interface GameState {
    * sin pagar su coste. Se sincroniza online.
    */
   pendingSelfSummon: { playerId: PlayerId; cardId: string; cardName: string } | null;
+  /**
+   * Decisión de 'fase_final_roba2' (Diego Portales): al comienzo de la Fase
+   * Final de su controlador, puede robar 2 cartas. Se sincroniza online.
+   */
+  pendingFinalDraw: { playerId: PlayerId; sourceName: string } | null;
   responseWindow: {
     /** Carta recién jugada (ya en su zona) que puede ser anulada */
     cardInstanceId: string;

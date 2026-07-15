@@ -35,6 +35,15 @@ import {
   hasCopySearchOnEnter,
   hasEnterDraw3,
   hasSelfSummonFromDeck,
+  hasEnterRegroup3,
+  hasDestroyNonGold,
+  hasCheapCaudilloSummon,
+  isCheapCaudilloTarget,
+  hasFinalDraw2,
+  CHEAP_CAUDILLO_GOLD_COST,
+  raceSuppressNonCPActive,
+  weaponsOf,
+  weaponLimitUnlocked,
   isIndestructibleEffective,
   hasIndesterrable,
   immuneToAllyOrOpponentEffect,
@@ -53,7 +62,6 @@ import {
   hasCaudilloGoldAbility,
   hasHandDiscardDraw,
   hasHandTutorCaudillo,
-  hasCostOneSuppress,
   costOneSuppressActive,
   CAUDILLO_GOLD_YIELD,
   MILL_DESTROY_COST,
@@ -142,32 +150,41 @@ function restoreAbilities(
 function reapplyCostOneSuppression(
   players: Record<PlayerId, PlayerState>,
 ): Record<PlayerId, PlayerState> {
-  const active = costOneSuppressActive(players);
+  const bandera = costOneSuppressActive(players); // 'suprime_coste1' (coste 1)
+  const heroes = raceSuppressNonCPActive(players); // 'suprime_no_caudillo_patriota'
   const patch = {} as Record<PlayerId, PlayerState>;
   for (const pid of ['player', 'opponent'] as PlayerId[]) {
     const p = players[pid];
     const cs = { ...p.costSuppressed };
     const apply = (c: CardInPlay): CardInPlay => {
-      const shouldSuppress =
-        active && c.coste === 1 && !hasCostOneSuppress(c) && (c.habilidadesEspeciales?.length ?? 0) > 0;
-      if (shouldSuppress && !(c.instanceId in cs)) {
-        cs[c.instanceId] = c.habilidadesEspeciales!;
-        return { ...c, habilidadesEspeciales: [] };
-      }
-      // Restaura si ya no debe estar suprimida (Bandera salió de juego).
-      if (!active && c.instanceId in cs) {
+      const restore = () => {
+        if (!(c.instanceId in cs)) return c;
         const original = cs[c.instanceId];
         delete cs[c.instanceId];
         return { ...c, habilidadesEspeciales: original };
+      };
+      // ¿Debe estar suprimida ahora? (una carta es fuente si tiene la keyword)
+      const abilities = c.instanceId in cs ? cs[c.instanceId] : c.habilidadesEspeciales ?? [];
+      const isSource =
+        abilities.includes('suprime_coste1') || abilities.includes('suprime_no_caudillo_patriota');
+      const shouldSuppress =
+        !isSource &&
+        abilities.length > 0 &&
+        ((bandera && c.coste === 1) ||
+          (heroes && c.tipo === 'aliado' && c.raza !== 'Caudillo' && c.raza !== 'Patriota'));
+      if (shouldSuppress) {
+        if (c.instanceId in cs) return c; // ya suprimida
+        cs[c.instanceId] = c.habilidadesEspeciales!;
+        return { ...c, habilidadesEspeciales: [] };
       }
-      return c;
+      return restore();
     };
     patch[pid] = {
       ...p,
       defenseField: p.defenseField.map(apply),
       attackField: p.attackField.map(apply),
       supportField: p.supportField.map(apply),
-      costSuppressed: active ? cs : {},
+      costSuppressed: cs,
     };
   }
   return patch;
@@ -208,6 +225,29 @@ function maybeDrawOnEnter(card: Card, playerId: PlayerId): void {
  * 'invoca_copia_gratis' (San Martín): al entrar, si hay copias de sí misma en
  * el Castillo, abre la invocación gratis; si no, notifica.
  */
+/**
+ * 'entra_agrupa3' (Héroes de Chile): al entrar, agrupa hasta 3 oros del
+ * dueño (goldPaid → reserva) automáticamente.
+ */
+function maybeRegroup3OnEnter(card: Card, playerId: PlayerId): void {
+  if (card.tipo !== 'aliado' || !hasEnterRegroup3(card)) return;
+  const st = useGameStore.getState();
+  if (st.isGameOver) return;
+  const p = st.players[playerId];
+  if (p.goldPaid.length === 0) return;
+  const n = Math.min(3, p.goldPaid.length);
+  const regrouped = p.goldPaid.slice(p.goldPaid.length - n); // los últimos n pagados
+  const remainingPaid = p.goldPaid.slice(0, p.goldPaid.length - n);
+  const newGold = [...p.gold, ...regrouped];
+  useGameStore.setState({
+    players: {
+      ...st.players,
+      [playerId]: { ...p, gold: newGold, goldPaid: remainingPaid, goldCount: newGold.length },
+    },
+  });
+  useGameStore.getState().addLog(`${card.nombre}: ${p.name} agrupa ${n} Oro(s) a su Reserva al entrar.`, 'action');
+}
+
 function maybeSelfSummon(card: Card, playerId: PlayerId): void {
   if (card.tipo !== 'aliado' || !hasSelfSummonFromDeck(card)) return;
   const st = useGameStore.getState();
@@ -275,6 +315,7 @@ export function buildInitialState(
     pendingHandDiscard: null,
     pendingCopyTutor: null,
     pendingSelfSummon: null,
+    pendingFinalDraw: null,
     responseWindow: null,
     fxLightning: null,
     gameLog: [
@@ -404,6 +445,16 @@ interface GameActions {
     playerId: PlayerId,
   ) => void;
   /**
+   * 'destruye_no_oro' (Héroes de Chile): 1 vez por turno, destruye una carta
+   * en juego (aliado, tótem o maquinaria) que no sea Oro.
+   */
+  destroyNonGoldCard: (
+    sourceInstanceId: string,
+    targetInstanceId: string,
+    targetOwnerId: PlayerId,
+    playerId: PlayerId,
+  ) => void;
+  /**
    * 'barajar_mano_roba8': resuelve la decisión — si acepta, baraja la mano
    * en el Mazo Castillo (orden aleatorio) y roba 8 cartas nuevas.
    */
@@ -480,6 +531,13 @@ interface GameActions {
   resolveSelfSummon: (deckIndex: number, playerId: PlayerId) => void;
   /** Cierra la invocación de copia sin jugar ninguna. */
   cancelSelfSummon: (playerId: PlayerId) => void;
+  /**
+   * 'invoca_caudillo_barato' (Diego Portales): paga 2 oros e invoca un Aliado
+   * Caudillo de coste ≤ 3 desde el Castillo sin pagar su coste. 1×/turno.
+   */
+  summonCheapCaudillo: (sourceInstanceId: string, deckIndex: number, playerId: PlayerId) => void;
+  /** 'fase_final_roba2' (Diego Portales): resuelve la decisión de robar 2. */
+  resolveFinalDraw: (accept: boolean, playerId: PlayerId) => void;
   /** Replace the whole game state (online sync). */
   hydrateState: (state: GameState) => void;
   addLog: (msg: string, type?: GameLogEntry['type']) => void;
@@ -722,6 +780,7 @@ export const useGameStore = create<GameStore>()(
         maybeTriggerPatriotaEnter(card, playerId);
         maybeDrawOnEnter(card, playerId);
         maybeSelfSummon(card, playerId);
+        maybeRegroup3OnEnter(card, playerId);
 
         // 'busca_copia_entra' (Escudo Nacional Mercenario): al entrar, si hay
         // copias de esta misma carta en el Castillo o Cementerio, abrir la
@@ -752,9 +811,14 @@ export const useGameStore = create<GameStore>()(
         }
 
         const newHand = player.hand.filter((c) => c.instanceId !== weapon.instanceId);
-        const prevWeapon = player.equippedWeapons[allyInstanceId];
-        const newGraveyard = prevWeapon ? [...player.graveyard, prevWeapon] : player.graveyard;
         const ally = player.defenseField.find((c) => c.instanceId === allyInstanceId);
+        // Límite de armas: 1 por aliado, salvo Patriota con Ramón Freire.
+        const existing = weaponsOf(player, allyInstanceId);
+        const unlocked = ally ? weaponLimitUnlocked(ally, player) : false;
+        // Con límite: la anterior va al cementerio. Sin límite: se acumulan.
+        const newWeapons = unlocked ? [...existing, weapon] : [weapon];
+        const newGraveyard =
+          !unlocked && existing.length > 0 ? [...player.graveyard, ...existing] : player.graveyard;
 
         set((s) => {
           const p = s.players[playerId];
@@ -772,7 +836,7 @@ export const useGameStore = create<GameStore>()(
                 goldCount: remaining.length,
                 equippedWeapons: {
                   ...p.equippedWeapons,
-                  [allyInstanceId]: weapon,
+                  [allyInstanceId]: newWeapons,
                 },
               },
             },
@@ -801,7 +865,7 @@ export const useGameStore = create<GameStore>()(
         const ally = player.defenseField.find((c) => c.instanceId === allyInstanceId);
         if (!ally) return;
 
-        const { allowed, reason } = canDeclareAttack(ally, turn, playerId);
+        const { allowed, reason } = canDeclareAttack(ally, turn, playerId, player);
         if (!allowed) {
           get().addLog(reason ?? 'No puedes atacar con ese aliado.', 'error');
           return;
@@ -1065,13 +1129,14 @@ export const useGameStore = create<GameStore>()(
           // 'indestructible' (propio u otorgado) sobrevive a la destrucción;
           // 'no_sale_del_juego' no puede abandonar el campo por ningún medio.
           if (isIndestructibleEffective(card, owner) || cannotLeavePlay(card)) return owner;
-          const weapon = owner.equippedWeapons[instanceId];
-          const { [instanceId]: _, ...restWeapons } = owner.equippedWeapons;
+          const weapons = weaponsOf(owner, instanceId);
+          const restWeapons = { ...owner.equippedWeapons };
+          delete restWeapons[instanceId];
           return {
             ...owner,
             attackField: owner.attackField.filter((c) => c.instanceId !== instanceId),
             defenseField: owner.defenseField.filter((c) => c.instanceId !== instanceId),
-            graveyard: [...owner.graveyard, card, ...(weapon ? [weapon] : [])],
+            graveyard: [...owner.graveyard, card, ...weapons],
             equippedWeapons: restWeapons,
           };
         };
@@ -1099,16 +1164,14 @@ export const useGameStore = create<GameStore>()(
           // 'destierro_combate' (Sable de Caballería SP): si el arma del
           // atacante tiene la habilidad y hubo daño de combate al castillo,
           // se destierran todos los aliados en juego de ese oponente.
-          const atkWeapon = attackerPlayer.equippedWeapons[attacker.instanceId];
-          if (damaged > 0 && atkWeapon && hasCombatExileAll(atkWeapon)) {
+          const atkWeapons = weaponsOf(attackerPlayer, attacker.instanceId);
+          if (damaged > 0 && atkWeapons.some(hasCombatExileAll)) {
             const exilable = (c: CardInPlay) => !hasIndesterrable(c) && !cannotLeavePlay(c);
             const toExile = [...newDefender.defenseField, ...newDefender.attackField].filter(exilable);
             combatExiled = toExile.length;
             if (combatExiled > 0) {
               const exiledIds = new Set(toExile.map((c) => c.instanceId));
-              const orphanWeapons = toExile
-                .map((c) => newDefender.equippedWeapons[c.instanceId])
-                .filter((w): w is CardInPlay => !!w);
+              const orphanWeapons = toExile.flatMap((c) => weaponsOf(newDefender, c.instanceId));
               const restWeapons = { ...newDefender.equippedWeapons };
               for (const id of exiledIds) delete restWeapons[id];
               newDefender = {
@@ -1159,7 +1222,7 @@ export const useGameStore = create<GameStore>()(
         }
 
         if (combatExiled > 0) {
-          const atkWeapon = attackerPlayer.equippedWeapons[attacker.instanceId];
+          const atkWeapon = weaponsOf(attackerPlayer, attacker.instanceId).find(hasCombatExileAll);
           get().addLog(
             `${atkWeapon?.nombre ?? 'El arma'}: daño de combate al Castillo — ${combatExiled} aliado(s) de ${defenderPlayer.name} son desterrados.`,
             'combat'
@@ -1338,6 +1401,14 @@ export const useGameStore = create<GameStore>()(
               'action'
             );
           }
+
+          // 'fase_final_roba2' (Diego Portales): solo el jugador de turno, si
+          // controla la carta, decide si roba 2 (modal).
+          const active = get().players[turn.currentPlayer];
+          if ([...active.defenseField, ...active.attackField].some(hasFinalDraw2)) {
+            const src = [...active.defenseField, ...active.attackField].find(hasFinalDraw2)!;
+            set({ pendingFinalDraw: { playerId: turn.currentPlayer, sourceName: src.nombre } });
+          }
         }
 
         const LABELS: Record<TurnPhase, string> = {
@@ -1480,7 +1551,7 @@ export const useGameStore = create<GameStore>()(
         // Pagar 1 oro: mover el último oro disponible a goldPaid
         const paid = player.gold[player.gold.length - 1];
         const newGold = player.gold.slice(0, -1);
-        const weapon = player.equippedWeapons[allyInstanceId];
+        const weapon = weaponsOf(player, allyInstanceId).find((w) => w.instanceId === weaponInstanceId);
         const weaponName = weapon?.nombre ?? 'El arma';
         set((s) => ({
           players: {
@@ -1918,6 +1989,7 @@ export const useGameStore = create<GameStore>()(
         maybeTriggerPatriotaEnter(card, playerId);
         maybeDrawOnEnter(card, playerId);
         maybeSelfSummon(card, playerId);
+        maybeRegroup3OnEnter(card, playerId);
         set((s) => ({ players: reapplyCostOneSuppression(s.players) }));
       },
 
@@ -1946,27 +2018,31 @@ export const useGameStore = create<GameStore>()(
           return;
         }
 
+        // Límite de armas: 1 salvo Patriota con Ramón Freire.
+        const unlocked = weaponLimitUnlocked(ally, player);
         set((s) => {
           const p = s.players[playerId];
           const paid = p.gold.slice(p.gold.length - weaponCost);
           const remaining = p.gold.slice(0, p.gold.length - weaponCost);
-          const prevWeapon = p.equippedWeapons[allyInstanceId];
+          const existing = weaponsOf(p, allyInstanceId);
+          const newWeapons = unlocked ? [...existing, weapon] : [weapon];
+          // El arma nueva sale de su zona; las reemplazadas (si con límite) al cementerio.
+          let graveyard = zone === 'graveyard'
+            ? p.graveyard.filter((c) => c.instanceId !== weaponInstanceId)
+            : p.graveyard;
+          if (!unlocked && existing.length > 0) graveyard = [...graveyard, ...existing];
           return {
             players: {
               ...s.players,
               [playerId]: {
                 ...p,
                 [zone]: p[zone].filter((c) => c.instanceId !== weaponInstanceId),
-                graveyard: prevWeapon
-                  ? [...p.graveyard.filter((c) => c.instanceId !== weaponInstanceId), prevWeapon]
-                  : zone === 'graveyard'
-                  ? p.graveyard.filter((c) => c.instanceId !== weaponInstanceId)
-                  : p.graveyard,
+                graveyard,
                 gold: remaining,
                 goldPaid: [...p.goldPaid, ...paid],
                 goldCount: remaining.length,
                 goldSpentThisTurn: weaponCost > 0 ? true : p.goldSpentThisTurn,
-                equippedWeapons: { ...p.equippedWeapons, [allyInstanceId]: weapon },
+                equippedWeapons: { ...p.equippedWeapons, [allyInstanceId]: newWeapons },
               },
             },
           };
@@ -2099,13 +2175,13 @@ export const useGameStore = create<GameStore>()(
             life: p.deck.length - MILL_DESTROY_COST,
           };
           const o = s.players[targetOwnerId];
-          const weapon = o.equippedWeapons[targetInstanceId];
+          const weapons = weaponsOf(o, targetInstanceId);
           const restWeapons = { ...o.equippedWeapons };
           delete restWeapons[targetInstanceId];
           const ownerPatch = {
             defenseField: o.defenseField.filter((c) => c.instanceId !== targetInstanceId),
             attackField: o.attackField.filter((c) => c.instanceId !== targetInstanceId),
-            graveyard: [...o.graveyard, target, ...(weapon ? [weapon] : [])],
+            graveyard: [...o.graveyard, target, ...weapons],
             equippedWeapons: restWeapons,
           };
           const same = playerId === targetOwnerId;
@@ -2113,10 +2189,10 @@ export const useGameStore = create<GameStore>()(
             players: {
               ...s.players,
               [playerId]: same
-                ? { ...p, ...ownerPatch, ...payerPatch, graveyard: [...p.graveyard, target, ...(weapon ? [weapon] : []), ...milled] }
+                ? { ...p, ...ownerPatch, ...payerPatch, graveyard: [...p.graveyard, target, ...weapons, ...milled] }
                 : { ...p, ...payerPatch },
               [targetOwnerId]: same
-                ? { ...p, ...ownerPatch, ...payerPatch, graveyard: [...p.graveyard, target, ...(weapon ? [weapon] : []), ...milled] }
+                ? { ...p, ...ownerPatch, ...payerPatch, graveyard: [...p.graveyard, target, ...weapons, ...milled] }
                 : { ...o, ...ownerPatch },
             },
           };
@@ -2125,6 +2201,65 @@ export const useGameStore = create<GameStore>()(
           `${source.nombre}: ${player.name} bota ${MILL_DESTROY_COST} cartas y destruye a ${target.nombre}.`,
           'combat'
         );
+        const { isOver, winnerId } = checkGameOver(get().players);
+        if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
+      },
+
+      destroyNonGoldCard: (sourceInstanceId, targetInstanceId, targetOwnerId, playerId) => {
+        const { players, turn, combat, responseWindow, isGameOver } = get();
+        if (isGameOver || combat || responseWindow) return;
+        const player = players[playerId];
+        if (turn.currentPlayer !== playerId || turn.phase !== 'vigilia') {
+          get().addLog('Esta habilidad solo puede activarse en tu Vigilia.', 'error');
+          return;
+        }
+        const source = [...player.defenseField, ...player.attackField].find(
+          (c) => c.instanceId === sourceInstanceId
+        );
+        if (!source || !hasDestroyNonGold(source)) return;
+        const useKey = abilityUseKey(sourceInstanceId, 'destruye_no_oro');
+        if (player.allyAbilityUsedThisTurn.includes(useKey)) {
+          get().addLog('Esta habilidad ya fue usada este turno.', 'error');
+          return;
+        }
+
+        const targetOwner = players[targetOwnerId];
+        const target = [...targetOwner.defenseField, ...targetOwner.attackField, ...targetOwner.supportField].find(
+          (c) => c.instanceId === targetInstanceId && c.tipo !== 'oro'
+        );
+        if (!target) return;
+        if (immuneToAllyOrOpponentEffect(target)) {
+          get().addLog(`${target.nombre} es inmune a las habilidades de Aliados.`, 'error');
+          return;
+        }
+        if (isIndestructibleEffective(target, targetOwner) || cannotLeavePlay(target)) {
+          get().addLog(`${target.nombre} no puede ser destruido.`, 'error');
+          return;
+        }
+
+        set((s) => {
+          const o = s.players[targetOwnerId];
+          const weapons = weaponsOf(o, targetInstanceId);
+          const restWeapons = { ...o.equippedWeapons };
+          delete restWeapons[targetInstanceId];
+          const patched = {
+            ...o,
+            defenseField: o.defenseField.filter((c) => c.instanceId !== targetInstanceId),
+            attackField: o.attackField.filter((c) => c.instanceId !== targetInstanceId),
+            supportField: o.supportField.filter((c) => c.instanceId !== targetInstanceId),
+            graveyard: [...o.graveyard, target, ...weapons],
+            equippedWeapons: restWeapons,
+          };
+          const meId = playerId;
+          const players2 = { ...s.players, [targetOwnerId]: patched };
+          // Marca el uso 1×/turno en el jugador activo.
+          players2[meId] = {
+            ...players2[meId],
+            allyAbilityUsedThisTurn: [...players2[meId].allyAbilityUsedThisTurn, useKey],
+          };
+          return { players: players2 };
+        });
+        get().addLog(`${source.nombre}: ${player.name} destruye a ${target.nombre}.`, 'combat');
         const { isOver, winnerId } = checkGameOver(get().players);
         if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
       },
@@ -2320,6 +2455,7 @@ export const useGameStore = create<GameStore>()(
         maybeDrawOnEnter(played, playerId);
         maybeTriggerPatriotaEnter(played, playerId);
         maybeSelfSummon(played, playerId);
+        maybeRegroup3OnEnter(played, playerId);
         set((s) => ({ players: reapplyCostOneSuppression(s.players) }));
 
         const { isOver, winnerId } = checkGameOver(get().players);
@@ -2330,6 +2466,97 @@ export const useGameStore = create<GameStore>()(
         const { pendingSelfSummon } = get();
         if (!pendingSelfSummon || pendingSelfSummon.playerId !== playerId) return;
         set({ pendingSelfSummon: null });
+      },
+
+      summonCheapCaudillo: (sourceInstanceId, deckIndex, playerId) => {
+        const { players, turn, combat } = get();
+        const player = players[playerId];
+        if (combat) {
+          get().addLog('No puedes invocar durante un combate pendiente.', 'error');
+          return;
+        }
+        if (turn.currentPlayer !== playerId || turn.phase !== 'vigilia') {
+          get().addLog('Esta habilidad solo puede activarse en tu Vigilia.', 'error');
+          return;
+        }
+        const source = [...player.defenseField, ...player.attackField].find(
+          (c) => c.instanceId === sourceInstanceId
+        );
+        if (!source || !hasCheapCaudilloSummon(source)) return;
+        const useKey = abilityUseKey(sourceInstanceId, 'invoca_caudillo_barato');
+        if (player.allyAbilityUsedThisTurn.includes(useKey)) {
+          get().addLog(`La habilidad de ${source.nombre} ya fue usada este turno.`, 'error');
+          return;
+        }
+        if (player.goldCount < CHEAP_CAUDILLO_GOLD_COST) {
+          get().addLog(`Necesitas ${CHEAP_CAUDILLO_GOLD_COST} oros para activar esta habilidad.`, 'error');
+          return;
+        }
+        const target = player.deck[deckIndex];
+        if (!target || !isCheapCaudilloTarget(target)) {
+          get().addLog('Debes elegir un Aliado Caudillo de Coste 3 o menos.', 'error');
+          return;
+        }
+
+        const paid = player.gold.slice(player.gold.length - CHEAP_CAUDILLO_GOLD_COST);
+        const remainingGold = player.gold.slice(0, player.gold.length - CHEAP_CAUDILLO_GOLD_COST);
+        const newDeck = player.deck.filter((_, i) => i !== deckIndex);
+        const played = { ...createCardInPlay(target), summonedThisTurn: true };
+        set((s) => ({
+          players: {
+            ...s.players,
+            [playerId]: {
+              ...s.players[playerId],
+              deck: newDeck,
+              life: newDeck.length,
+              defenseField: [...s.players[playerId].defenseField, played],
+              gold: remainingGold,
+              goldPaid: [...s.players[playerId].goldPaid, ...paid],
+              goldCount: remainingGold.length,
+              goldSpentThisTurn: true,
+              allyAbilityUsedThisTurn: [...s.players[playerId].allyAbilityUsedThisTurn, useKey],
+            },
+          },
+        }));
+        get().addLog(
+          `${source.nombre}: ${player.name} paga ${CHEAP_CAUDILLO_GOLD_COST} oros e invoca a ${target.nombre} (Caudillo) desde el Castillo sin pagar su coste.`,
+          'action'
+        );
+        // El invocado dispara sus triggers de entrada.
+        maybeDrawOnEnter(played, playerId);
+        maybeTriggerPatriotaEnter(played, playerId);
+        maybeSelfSummon(played, playerId);
+        maybeRegroup3OnEnter(played, playerId);
+        set((s) => ({ players: reapplyCostOneSuppression(s.players) }));
+      },
+
+      resolveFinalDraw: (accept, playerId) => {
+        const { pendingFinalDraw, players } = get();
+        if (!pendingFinalDraw || pendingFinalDraw.playerId !== playerId) return;
+        const player = players[playerId];
+        if (!accept) {
+          set({ pendingFinalDraw: null });
+          get().addLog(`${player.name} no usa el efecto de ${pendingFinalDraw.sourceName}.`, 'system');
+          return;
+        }
+        const n = Math.min(2, player.deck.length);
+        const { drawn, remaining } = drawCards(player.deck, n);
+        set((s) => {
+          const p = s.players[playerId];
+          return {
+            pendingFinalDraw: null,
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                deck: remaining,
+                hand: [...p.hand, ...drawn.map(createCardInPlay)],
+                life: remaining.length,
+              },
+            },
+          };
+        });
+        get().addLog(`${pendingFinalDraw.sourceName}: ${player.name} roba ${n} cartas en su Fase Final.`, 'action');
       },
 
       resolveTypeChoice: (tipo, playerId) => {
@@ -2406,15 +2633,15 @@ export const useGameStore = create<GameStore>()(
             allyAbilityUsedThisTurn: p.allyAbilityUsedThisTurn.filter((i) => !ids.includes(i)),
           });
 
-          // El arma equipada acompaña a su aliado al cambiar de bando.
-          const sourceWeapon = me.equippedWeapons[sourceInstanceId];
-          const targetWeapon = op.equippedWeapons[targetInstanceId];
+          // Las armas equipadas acompañan a su aliado al cambiar de bando.
+          const sourceWeapons = weaponsOf(me, sourceInstanceId);
+          const targetWeapons = weaponsOf(op, targetInstanceId);
           const myWeapons = { ...me.equippedWeapons };
           delete myWeapons[sourceInstanceId];
           const opWeapons = { ...op.equippedWeapons };
           delete opWeapons[targetInstanceId];
-          if (targetWeapon) myWeapons[targetInstanceId] = targetWeapon;
-          if (sourceWeapon) opWeapons[sourceInstanceId] = sourceWeapon;
+          if (targetWeapons.length) myWeapons[targetInstanceId] = targetWeapons;
+          if (sourceWeapons.length) opWeapons[sourceInstanceId] = sourceWeapons;
 
           return {
             players: {
@@ -2929,6 +3156,7 @@ export const useGameStore = create<GameStore>()(
         maybeTriggerPatriotaEnter(target, playerId);
         maybeDrawOnEnter(target, playerId);
         maybeSelfSummon(target, playerId);
+        maybeRegroup3OnEnter(target, playerId);
         set((s) => ({ players: reapplyCostOneSuppression(s.players) }));
 
         const { isOver, winnerId } = checkGameOver(get().players);

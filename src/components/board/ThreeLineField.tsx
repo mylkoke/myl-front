@@ -79,24 +79,42 @@ export function ThreeLineField({ playerId, isOpponent = false }: ThreeLineFieldP
   const swapTargetingRaw = useTargetingStore((s) => s.swap);
   const swapTargeting =
     swapTargetingRaw && swapTargetingRaw.playerId !== playerId ? swapTargetingRaw : null;
+  // 'destruye_no_oro' (Héroes de Chile): cualquier carta en juego es objetivo.
+  const destroyAnyTargeting = useTargetingStore((s) => s.destroyAny);
   const cancelTargeting = useTargetingStore((s) => s.cancel);
-  const { swapControl } = useGameActions();
+  const { swapControl, destroyNonGoldCard } = useGameActions();
 
-  const swapWrap = (card: CardInPlay, node: React.ReactNode) =>
-    swapTargeting ? (
-      <div
-        className="relative cursor-pointer"
-        onClick={() => {
-          swapControl(swapTargeting.sourceInstanceId, card.instanceId, playerId, swapTargeting.playerId);
-          cancelTargeting();
-        }}
-      >
-        <div className="absolute -inset-1 rounded-xl ring-2 ring-yellow-400 animate-pulse pointer-events-none z-30" />
-        <div className="pointer-events-none">{node}</div>
-      </div>
-    ) : (
-      node
-    );
+  const swapWrap = (card: CardInPlay, node: React.ReactNode) => {
+    if (swapTargeting) {
+      return (
+        <div
+          className="relative cursor-pointer"
+          onClick={() => {
+            swapControl(swapTargeting.sourceInstanceId, card.instanceId, playerId, swapTargeting.playerId);
+            cancelTargeting();
+          }}
+        >
+          <div className="absolute -inset-1 rounded-xl ring-2 ring-yellow-400 animate-pulse pointer-events-none z-30" />
+          <div className="pointer-events-none">{node}</div>
+        </div>
+      );
+    }
+    if (destroyAnyTargeting) {
+      return (
+        <div
+          className="relative cursor-pointer"
+          onClick={() => {
+            destroyNonGoldCard(destroyAnyTargeting.sourceInstanceId, card.instanceId, playerId, destroyAnyTargeting.playerId);
+            cancelTargeting();
+          }}
+        >
+          <div className="absolute -inset-1 rounded-xl ring-2 ring-red-400 animate-pulse pointer-events-none z-30" />
+          <div className="pointer-events-none">{node}</div>
+        </div>
+      );
+    }
+    return node;
+  };
   const equippedWeapons = useGameStore((s) => s.players[playerId].equippedWeapons);
   const turn           = useGameStore((s) => s.turn);
   const player         = useGameStore((s) => s.players[playerId]);
@@ -197,7 +215,7 @@ export function ThreeLineField({ playerId, isOpponent = false }: ThreeLineFieldP
             >
               <AllySlot
                 ally={card}
-                weapon={equippedWeapons[card.instanceId]}
+                weapons={equippedWeapons[card.instanceId] ?? []}
                 playerId={playerId}
                 isOpponent={isOpponent}
                 size={defenseSize}

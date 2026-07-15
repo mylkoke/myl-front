@@ -13,6 +13,10 @@ import {
   abilityUseKey,
   effectiveForce,
   hasCaudilloSummon,
+  hasCheapCaudilloSummon,
+  isCheapCaudilloTarget,
+  CHEAP_CAUDILLO_GOLD_COST,
+  hasDestroyNonGold,
   hasMillDestroy,
   hasMillGoldAbility,
   hasRaceSuppress,
@@ -32,17 +36,18 @@ import { useTargetingStore } from '@/store/targetingStore';
 
 interface AllySlotProps {
   ally: CardInPlay;
-  weapon: CardInPlay | undefined;
+  weapons: CardInPlay[];
   playerId: PlayerId;
   isOpponent?: boolean;
   size?: CardSize;
 }
 
-export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'md' }: AllySlotProps) {
+export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = 'md' }: AllySlotProps) {
   const [detailCard, setDetailCard] = useState<CardInPlay | null>(null);
   const [deckSearchOpen, setDeckSearchOpen] = useState(false);
   const { equipWeapon, summonCaudilloFromDeck, weakenAlly, millDestroyAlly, swapControl,
-    playRecycledTalisman, activateMillGold, chooseRaceSuppress, equipWeaponFromZone } = useGameActions();
+    playRecycledTalisman, activateMillGold, chooseRaceSuppress, equipWeaponFromZone,
+    destroyNonGoldCard } = useGameActions();
   const [recycleOpen, setRecycleOpen] = useState(false);
   const [razaPickerOpen, setRazaPickerOpen] = useState(false);
   const turn   = useGameStore((s) => s.turn);
@@ -71,16 +76,24 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
     equipTargetingRaw && equipTargetingRaw.playerId === playerId && !isOpponent
       ? equipTargetingRaw
       : null;
+  // 'destruye_no_oro' (Héroes de Chile): cualquier aliado en juego es objetivo.
+  const destroyAnyTargeting = useTargetingStore((s) => s.destroyAny);
   const cancelTargeting = useTargetingStore((s) => s.cancel);
-  const anyTargeting = weakenTargeting ?? destroyTargeting ?? swapTargeting ?? equipTargeting;
+  const anyTargeting =
+    weakenTargeting ?? destroyTargeting ?? swapTargeting ?? equipTargeting ?? destroyAnyTargeting;
 
   const isMyTurn = turn.currentPlayer === playerId && !isOpponent;
 
-  const weaponHasActivatedAbility = (weapon?.habilidadesEspeciales?.length ?? 0) > 0;
+  // Suma de bonos de fuerza de todas las armas (para el badge de la miniatura).
+  const weaponsForceSum = weapons.reduce((s, w) => s + (w.bonusFuerza ?? 0), 0);
+  // Habilidad activada por arma: el detalle muestra un arma concreta.
+  const detailWeapon = weapons.find((w) => w.instanceId === detailCard?.instanceId) ?? null;
+  const detailWeaponHasAbility = (detailWeapon?.habilidadesEspeciales?.length ?? 0) > 0;
   const canUseWeaponAbility =
     isMyTurn &&
-    weaponHasActivatedAbility &&
-    !player.weaponAbilityUsedThisTurn.includes(weapon!.instanceId) &&
+    detailWeaponHasAbility &&
+    !!detailWeapon &&
+    !player.weaponAbilityUsedThisTurn.includes(detailWeapon.instanceId) &&
     player.goldCount >= 1;
 
   // 'debilitar_aliado': en tu Vigilia, paga 1 oro → un aliado objetivo tiene
@@ -118,6 +131,28 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
     !combat &&
     turn.phase === 'vigilia' &&
     player.deck.length >= MILL_DESTROY_COST;
+
+  // 'destruye_no_oro' (Héroes de Chile): 1×/turno destruye una carta no-oro.
+  const allyHasDestroyNonGold = hasDestroyNonGold(ally);
+  const canUseDestroyNonGold =
+    isMyTurn &&
+    allyHasDestroyNonGold &&
+    !combat &&
+    turn.phase === 'vigilia' &&
+    !player.allyAbilityUsedThisTurn.includes(abilityUseKey(ally.instanceId, 'destruye_no_oro'));
+
+  // 'invoca_caudillo_barato' (Diego Portales): 1×/turno, paga 2 oros, invoca
+  // un Caudillo coste ≤ 3 desde el Castillo.
+  const { summonCheapCaudillo } = useGameActions();
+  const [cheapSummonOpen, setCheapSummonOpen] = useState(false);
+  const allyHasCheapSummon = hasCheapCaudilloSummon(ally);
+  const canUseCheapSummon =
+    isMyTurn &&
+    allyHasCheapSummon &&
+    !combat &&
+    turn.phase === 'vigilia' &&
+    !player.allyAbilityUsedThisTurn.includes(abilityUseKey(ally.instanceId, 'invoca_caudillo_barato')) &&
+    player.goldCount >= CHEAP_CAUDILLO_GOLD_COST;
 
   // 'pagar2_bota6' y 'nombrar_raza_suprime' (Luis Carrera SP): dos
   // habilidades activadas en la misma carta → botones múltiples en el detalle.
@@ -253,6 +288,16 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
                     );
                     cancelTargeting();
                   }
+                : destroyAnyTargeting
+                ? () => {
+                    destroyNonGoldCard(
+                      destroyAnyTargeting.sourceInstanceId,
+                      ally.instanceId,
+                      playerId,
+                      destroyAnyTargeting.playerId,
+                    );
+                    cancelTargeting();
+                  }
                 : () => setDetailCard(ally)
             }
             dragPayload={
@@ -264,34 +309,34 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
             size={size}
           />
 
-          {/* Weapon bonus badge — muestra el bono total (base + temporal) */}
-          {weapon && !strengthLocked && ((weapon.bonusFuerza ?? 0) + tempBonus) > 0 && (
+          {/* Weapon bonus badge — bono total de armas (base + temporal) */}
+          {weapons.length > 0 && !strengthLocked && (weaponsForceSum + tempBonus) > 0 && (
             <div className={`absolute -top-1 -right-1 z-20 text-white text-[7px] font-bold rounded-full w-4 h-4 flex items-center justify-center shadow ${tempBonus > 0 ? 'bg-orange-500' : 'bg-red-600'}`}>
-              +{(weapon.bonusFuerza ?? 0) + tempBonus}
+              +{weaponsForceSum + tempBonus}
             </div>
           )}
 
-
-          {/* Weapon miniature — right edge of the ally card; click shows
-              full detail, closing it returns to miniature */}
-          {weapon && (
+          {/* Weapon miniatures — apiladas en el borde derecho; clic abre su detalle */}
+          {weapons.map((w, i) => (
             <div
-              className="absolute top-1/2 -translate-y-1/2 -right-4 z-20 cursor-pointer hover:scale-110 transition-transform drop-shadow-lg"
+              key={w.instanceId}
+              className="absolute top-1/2 z-20 cursor-pointer hover:scale-110 transition-transform drop-shadow-lg"
+              style={{ right: `${-16 - i * 8}px`, transform: `translateY(calc(-50% + ${i * 6}px))` }}
               onClick={(e) => {
                 e.stopPropagation();
-                setDetailCard(weapon);
+                setDetailCard(w);
               }}
-              title={`${weapon.nombre} (+${weapon.bonusFuerza ?? 0} ⚔) — clic para ver detalle`}
+              title={`${w.nombre} (+${w.bonusFuerza ?? 0} ⚔) — clic para ver detalle`}
             >
               <div className="card-enter">
-                <CardView card={weapon} size="xs" isOpponent={isOpponent} />
+                <CardView card={w} size="xs" isOpponent={isOpponent} />
               </div>
             </div>
-          )}
+          ))}
         </div>
 
         {/* Empty weapon slot hint */}
-        {!weapon && isMyTurn && (
+        {weapons.length === 0 && isMyTurn && (
           <div className="mt-0.5">
             <Sword size={8} className="text-slate-800 mx-auto" />
           </div>
@@ -303,8 +348,8 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
         isOpen={!!detailCard}
         onClose={() => setDetailCard(null)}
         onUseSpecialAbility={
-          detailCard && detailCard.instanceId === weapon?.instanceId && weaponHasActivatedAbility
-            ? () => { activateWeaponAbility(weapon!.instanceId, ally.instanceId, playerId); setDetailCard(null); }
+          detailWeapon && detailWeaponHasAbility
+            ? () => { activateWeaponAbility(detailWeapon.instanceId, ally.instanceId, playerId); setDetailCard(null); }
             : detailCard && detailCard.instanceId === ally.instanceId && allyHasSummonAbility && !isOpponent
             ? () => { setDetailCard(null); setDeckSearchOpen(true); }
             : detailCard && detailCard.instanceId === ally.instanceId && allyHasWeakenAbility && !isOpponent
@@ -320,6 +365,13 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
                 setDetailCard(null);
                 useTargetingStore.getState().startDestroy(ally.instanceId, playerId);
               }
+            : detailCard && detailCard.instanceId === ally.instanceId && allyHasDestroyNonGold && !isOpponent
+            ? () => {
+                setDetailCard(null);
+                useTargetingStore.getState().startDestroyAny(ally.instanceId, playerId);
+              }
+            : detailCard && detailCard.instanceId === ally.instanceId && allyHasCheapSummon && !isOpponent
+            ? () => { setDetailCard(null); setCheapSummonOpen(true); }
             : undefined
         }
         canUseSpecialAbility={
@@ -330,7 +382,11 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
               ? canUseWeakenAbility
               : allyHasRecycleAbility
               ? canUseRecycleAbility
-              : canUseMillDestroy
+              : allyHasMillDestroy
+              ? canUseMillDestroy
+              : allyHasDestroyNonGold
+              ? canUseDestroyNonGold
+              : canUseCheapSummon
             : canUseWeaponAbility
         }
         specialAbilityLabel={
@@ -341,7 +397,11 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
               ? `Debilitar: Fuerza 0 hasta la Fase Final (−${WEAKEN_GOLD_COST} Oro)`
               : allyHasRecycleAbility
               ? `Talismán del Cementerio/Destierro (coste −${TALISMAN_RECYCLE_DISCOUNT})`
-              : `Botar ${MILL_DESTROY_COST} cartas: destruir un aliado`
+              : allyHasMillDestroy
+              ? `Botar ${MILL_DESTROY_COST} cartas: destruir un aliado`
+              : allyHasDestroyNonGold
+              ? 'Destruir una carta en juego (no Oro)'
+              : `Invocar Caudillo ≤3 (−${CHEAP_CAUDILLO_GOLD_COST} Oros)`
             : undefined
         }
         abilityActions={
@@ -406,6 +466,19 @@ export function AllySlot({ ally, weapon, playerId, isOpponent = false, size = 'm
         onPlay={(index) =>
           playRecycledTalisman(ally.instanceId, recyclePool[index].instanceId, playerId)
         }
+      />
+
+      {/* 'invoca_caudillo_barato' (Diego Portales): Caudillos coste ≤ 3 del Castillo */}
+      <DeckSearchModal
+        isOpen={cheapSummonOpen}
+        onClose={() => setCheapSummonOpen(false)}
+        title={`Castillo — invocar Caudillo ≤3 (${ally.nombre})`}
+        deck={player.deck}
+        isEligible={isCheapCaudilloTarget}
+        onPlay={(deckIndex) => {
+          summonCheapCaudillo(ally.instanceId, deckIndex, playerId);
+          setCheapSummonOpen(false);
+        }}
       />
     </>
   );

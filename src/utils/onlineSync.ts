@@ -23,6 +23,7 @@ export function snapshotGameState(): GameState {
     pendingHandDiscard: s.pendingHandDiscard,
     pendingCopyTutor: s.pendingCopyTutor,
     pendingSelfSummon: s.pendingSelfSummon,
+    pendingFinalDraw: s.pendingFinalDraw,
     responseWindow: s.responseWindow,
     fxLightning: s.fxLightning,
   };
