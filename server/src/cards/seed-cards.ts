@@ -400,6 +400,14 @@ export const SEED_ABILITIES = [
     tipos: ['oro'],
   },
   {
+    code: 'invoca_copia_gratis',
+    nombre: 'Al entrar: invoca una copia gratis',
+    descripcion: 'Cuando esta carta entra en juego, su propietario puede jugar una copia de esta misma carta desde su Mazo Castillo sin pagar su Coste. Si no hay copias, no ocurre nada.',
+    implemented: true,
+    categoria: 'carta',
+    tipos: ['aliado'],
+  },
+  {
     code: 'otorga_indestructible_patriotas',
     nombre: 'Otorga Indestructible a Patriotas',
     descripcion: 'Mientras esta carta esté en juego, los Aliados de raza Patriota que controle su propietario son Indestructibles.',

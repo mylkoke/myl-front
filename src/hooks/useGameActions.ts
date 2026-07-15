@@ -41,6 +41,8 @@ export function useGameActions() {
   const pickPatriotaGraveyardCard = useGameStore((s) => s.pickPatriotaGraveyardCard);
   const tutorCopyFromZone = useGameStore((s) => s.tutorCopyFromZone);
   const cancelCopyTutor = useGameStore((s) => s.cancelCopyTutor);
+  const resolveSelfSummon = useGameStore((s) => s.resolveSelfSummon);
+  const cancelSelfSummon = useGameStore((s) => s.cancelSelfSummon);
   const equipWeaponFromZone = useGameStore((s) => s.equipWeaponFromZone);
   const passResponse = useGameStore((s) => s.passResponse);
   const closeResponseWindow = useGameStore((s) => s.closeResponseWindow);
@@ -134,6 +136,8 @@ export function useGameActions() {
     pickPatriotaGraveyardCard: ownerGated<[string]>(pickPatriotaGraveyardCard),
     tutorCopyFromZone: ownerGated<['deck' | 'graveyard', number | string]>(tutorCopyFromZone),
     cancelCopyTutor: ownerGated<[]>(cancelCopyTutor),
+    resolveSelfSummon: ownerGated<[number]>(resolveSelfSummon),
+    cancelSelfSummon: ownerGated<[]>(cancelSelfSummon),
     swapControl: ownerGated<[string, string, PlayerId]>(swapControl),
     passResponse: ownerGated<[]>(passResponse),
     closeResponseWindow: () => {

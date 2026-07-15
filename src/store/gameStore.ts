@@ -34,6 +34,7 @@ import {
   hasControlSwap,
   hasCopySearchOnEnter,
   hasEnterDraw3,
+  hasSelfSummonFromDeck,
   isIndestructibleEffective,
   hasIndesterrable,
   immuneToAllyOrOpponentEffect,
@@ -203,6 +204,26 @@ function maybeDrawOnEnter(card: Card, playerId: PlayerId): void {
   useGameStore.getState().addLog(`${card.nombre}: ${p.name} roba ${n} cartas al entrar en juego.`, 'action');
 }
 
+/**
+ * 'invoca_copia_gratis' (San Martín): al entrar, si hay copias de sí misma en
+ * el Castillo, abre la invocación gratis; si no, notifica.
+ */
+function maybeSelfSummon(card: Card, playerId: PlayerId): void {
+  if (card.tipo !== 'aliado' || !hasSelfSummonFromDeck(card)) return;
+  const st = useGameStore.getState();
+  if (st.isGameOver) return;
+  const p = st.players[playerId];
+  if (p.deck.some((c) => c.id === card.id)) {
+    useGameStore.setState({
+      pendingSelfSummon: { playerId, cardId: card.id, cardName: card.nombre },
+    });
+  } else {
+    useGameStore
+      .getState()
+      .addLog(`${card.nombre}: no hay copias disponibles en tu Mazo Castillo.`, 'system');
+  }
+}
+
 function maybeTriggerPatriotaEnter(card: Card, playerId: PlayerId): void {
   if (card.tipo !== 'aliado' || card.raza !== 'Patriota') return;
   const st = useGameStore.getState();
@@ -253,6 +274,7 @@ export function buildInitialState(
     pendingPatriotaTrigger: null,
     pendingHandDiscard: null,
     pendingCopyTutor: null,
+    pendingSelfSummon: null,
     responseWindow: null,
     fxLightning: null,
     gameLog: [
@@ -450,6 +472,14 @@ interface GameActions {
   ) => void;
   /** Cierra la búsqueda de copia sin sacar ninguna. */
   cancelCopyTutor: (playerId: PlayerId) => void;
+  /**
+   * 'invoca_copia_gratis' (San Martín): juega una copia propia (por índice)
+   * desde el Castillo sin pagar su coste; la copia dispara sus triggers de
+   * entrada (incluida otra invocación en cadena).
+   */
+  resolveSelfSummon: (deckIndex: number, playerId: PlayerId) => void;
+  /** Cierra la invocación de copia sin jugar ninguna. */
+  cancelSelfSummon: (playerId: PlayerId) => void;
   /** Replace the whole game state (online sync). */
   hydrateState: (state: GameState) => void;
   addLog: (msg: string, type?: GameLogEntry['type']) => void;
@@ -691,6 +721,7 @@ export const useGameStore = create<GameStore>()(
         // Patriota, su dueño decide si roba y baraja una carta del cementerio.
         maybeTriggerPatriotaEnter(card, playerId);
         maybeDrawOnEnter(card, playerId);
+        maybeSelfSummon(card, playerId);
 
         // 'busca_copia_entra' (Escudo Nacional Mercenario): al entrar, si hay
         // copias de esta misma carta en el Castillo o Cementerio, abrir la
@@ -1886,6 +1917,7 @@ export const useGameStore = create<GameStore>()(
         // 'trigger_patriota_roba_baraja': entrada de Patriota desde zona.
         maybeTriggerPatriotaEnter(card, playerId);
         maybeDrawOnEnter(card, playerId);
+        maybeSelfSummon(card, playerId);
         set((s) => ({ players: reapplyCostOneSuppression(s.players) }));
       },
 
@@ -2252,6 +2284,52 @@ export const useGameStore = create<GameStore>()(
         const { pendingCopyTutor } = get();
         if (!pendingCopyTutor || pendingCopyTutor.playerId !== playerId) return;
         set({ pendingCopyTutor: null });
+      },
+
+      resolveSelfSummon: (deckIndex, playerId) => {
+        const { players, pendingSelfSummon } = get();
+        if (!pendingSelfSummon || pendingSelfSummon.playerId !== playerId) return;
+        const player = players[playerId];
+        const card = player.deck[deckIndex];
+        if (!card || card.id !== pendingSelfSummon.cardId) return;
+
+        // Juega la copia en defensa sin pagar coste; el mazo se baraja.
+        const played = { ...createCardInPlay(card), summonedThisTurn: true };
+        set((s) => {
+          const p = s.players[playerId];
+          const newDeck = shuffleDeck(p.deck.filter((_, i) => i !== deckIndex));
+          return {
+            pendingSelfSummon: null,
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                deck: newDeck,
+                defenseField: [...p.defenseField, played],
+                life: newDeck.length,
+              },
+            },
+          };
+        });
+        get().addLog(
+          `${pendingSelfSummon.cardName}: ${player.name} juega una copia desde su Castillo sin pagar su coste.`,
+          'action'
+        );
+
+        // La copia dispara sus propios efectos de entrada (cadena posible).
+        maybeDrawOnEnter(played, playerId);
+        maybeTriggerPatriotaEnter(played, playerId);
+        maybeSelfSummon(played, playerId);
+        set((s) => ({ players: reapplyCostOneSuppression(s.players) }));
+
+        const { isOver, winnerId } = checkGameOver(get().players);
+        if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
+      },
+
+      cancelSelfSummon: (playerId) => {
+        const { pendingSelfSummon } = get();
+        if (!pendingSelfSummon || pendingSelfSummon.playerId !== playerId) return;
+        set({ pendingSelfSummon: null });
       },
 
       resolveTypeChoice: (tipo, playerId) => {
@@ -2850,6 +2928,7 @@ export const useGameStore = create<GameStore>()(
         // 'trigger_patriota_roba_baraja': el invocado también dispara la entrada.
         maybeTriggerPatriotaEnter(target, playerId);
         maybeDrawOnEnter(target, playerId);
+        maybeSelfSummon(target, playerId);
         set((s) => ({ players: reapplyCostOneSuppression(s.players) }));
 
         const { isOver, winnerId } = checkGameOver(get().players);

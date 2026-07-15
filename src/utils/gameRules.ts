@@ -747,6 +747,14 @@ export function hasEnterDraw3(card: Card): boolean {
 }
 
 /**
+ * 'invoca_copia_gratis' (San Martín): on entering play, its owner may play a
+ * copy of itself (same card id) from the castle deck without paying its cost.
+ */
+export function hasSelfSummonFromDeck(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('invoca_copia_gratis') ?? false;
+}
+
+/**
  * "Indesterrable": while on the battlefield, no ability or effect can send
  * this card to the Exile zone (D — Destierro). Targeted banish effects may
  * still pick it, but the banish fails on resolution; global "banish all"

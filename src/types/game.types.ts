@@ -183,6 +183,12 @@ export interface GameState {
    * en el Castillo o Cementerio y ponerla en su mano. Se sincroniza online.
    */
   pendingCopyTutor: { playerId: PlayerId; cardId: string; cardName: string } | null;
+  /**
+   * Invocación de copia propia de 'invoca_copia_gratis' (San Martín): al
+   * entrar, su dueño puede jugar una copia (mismo cardId) desde el Castillo
+   * sin pagar su coste. Se sincroniza online.
+   */
+  pendingSelfSummon: { playerId: PlayerId; cardId: string; cardName: string } | null;
   responseWindow: {
     /** Carta recién jugada (ya en su zona) que puede ser anulada */
     cardInstanceId: string;

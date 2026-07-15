@@ -55,11 +55,12 @@ export function GameBoard() {
   const pendingDiscard = useGameStore((s) => s.pendingDiscard);
   const pendingHandDiscard = useGameStore((s) => s.pendingHandDiscard);
   const pendingCopyTutor = useGameStore((s) => s.pendingCopyTutor);
+  const pendingSelfSummon = useGameStore((s) => s.pendingSelfSummon);
   const responseWindow = useGameStore((s) => s.responseWindow);
   const { discardFromHand, respondWithAnnul, passResponse, closeResponseWindow, resolveShuffleChoice,
     resolveSwapChoice, resolveTypeChoice, resolvePatriotaTrigger, pickPatriotaGraveyardCard,
     discardRivalTalisman, tutorCopyFromZone, cancelCopyTutor,
-    playCard: playCardAction } = useGameActions();
+    resolveSelfSummon, cancelSelfSummon, playCard: playCardAction } = useGameActions();
   const pendingSwapChoice = useGameStore((s) => s.pendingSwapChoice);
   const pendingTypeChoice = useGameStore((s) => s.pendingTypeChoice);
   const startSwap = useTargetingStore((s) => s.startSwap);
@@ -733,6 +734,45 @@ export function GameBoard() {
           </div>
         </div>
       )}
+
+      {/* ── San Martín: jugar una copia propia desde el Castillo gratis ── */}
+      {pendingSelfSummon && (!isOnline || mySeat === pendingSelfSummon.playerId) && (() => {
+        const p = players[pendingSelfSummon.playerId];
+        const copies = p.deck
+          .map((c, i) => ({ c, i }))
+          .filter(({ c }) => c.id === pendingSelfSummon.cardId);
+        return (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
+            <div className="w-full max-w-md bg-slate-900 border border-emerald-500/40 rounded-2xl p-4 sm:p-6 shadow-2xl">
+              <div className="text-center mb-3">
+                <div className="text-emerald-300 text-xs uppercase tracking-widest font-bold">
+                  {pendingSelfSummon.cardName}
+                </div>
+                <p className="text-slate-300 text-sm mt-1">
+                  Puedes jugar una copia desde tu Castillo sin pagar su coste.
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 max-h-64 overflow-y-auto mb-3">
+                {copies.map(({ c, i }) => (
+                  <CardView
+                    key={`self-${i}`}
+                    card={{ ...c, instanceId: `self-${i}`, tapped: false, attackedThisTurn: false, summonedThisTurn: false }}
+                    size="sm"
+                    onClick={() => resolveSelfSummon(i, pendingSelfSummon.playerId)}
+                  />
+                ))}
+              </div>
+              <Button
+                variant="secondary"
+                fullWidth
+                onClick={() => cancelSelfSummon(pendingSelfSummon.playerId)}
+              >
+                No invocar
+              </Button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Escudo Nacional Mercenario: buscar una copia propia ────────── */}
       {pendingCopyTutor && (!isOnline || mySeat === pendingCopyTutor.playerId) && (() => {
