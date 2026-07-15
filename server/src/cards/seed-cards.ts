@@ -400,6 +400,14 @@ export const SEED_ABILITIES = [
     tipos: ['oro'],
   },
   {
+    code: 'debilita_atacantes_bloqueo',
+    nombre: 'Al bloquear: debilita atacantes',
+    descripcion: 'Cada vez que este Aliado bloquee, todos los Aliados atacantes pierden X a la Fuerza hasta la Fase Final, donde X es igual a la Fuerza (efectiva) de esta carta.',
+    implemented: true,
+    categoria: 'carta',
+    tipos: ['aliado'],
+  },
+  {
     code: 'inmunidad_habilidades_oponentes',
     nombre: 'Inmunidad: Habilidades Oponentes',
     descripcion: 'Esta carta no puede ser objetivo ni verse afectada por ninguna habilidad del oponente (aliados, tótems, armas u oros rivales) — todo lo que no sean Talismanes.',

@@ -30,6 +30,7 @@ import {
   cannotLeavePlay,
   canPlayFromZone,
   hasCombatExileAll,
+  hasBlockWeakenAll,
   hasControlSwap,
   hasIndesterrable,
   immuneToAllyOrOpponentEffect,
@@ -808,6 +809,29 @@ export const useGameStore = create<GameStore>()(
             : `${defenderPlayer.name} no declara bloqueo.`,
           'combat'
         );
+
+        // 'debilita_atacantes_bloqueo' (Balmaceda HC-11): al bloquear, todos
+        // los aliados atacantes pierden X a la Fuerza hasta la Fase Final,
+        // donde X = Fuerza EFECTIVA del bloqueador en este momento.
+        if (blocker && hasBlockWeakenAll(blocker)) {
+          const x = effectiveForce(blocker, defenderPlayer, players);
+          if (x > 0) {
+            set((s) => {
+              const atk = s.players[combat.attackerId];
+              const bonuses = { ...atk.weaponTempBonuses };
+              for (const ally of atk.attackField) {
+                bonuses[ally.instanceId] = (bonuses[ally.instanceId] ?? 0) - x;
+              }
+              return {
+                players: { ...s.players, [combat.attackerId]: { ...atk, weaponTempBonuses: bonuses } },
+              };
+            });
+            get().addLog(
+              `${blocker.nombre} bloquea: los aliados atacantes de ${players[combat.attackerId].name} pierden ${x} de Fuerza hasta la Fase Final.`,
+              'combat'
+            );
+          }
+        }
 
         // 'castigo_bloqueo': si el atacante tiene la habilidad y fue bloqueado,
         // el defensor bota 6 cartas de su Mazo Castillo al Cementerio.

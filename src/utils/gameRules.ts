@@ -669,6 +669,15 @@ export function effectiveForce(
   );
 }
 
+/**
+ * 'debilita_atacantes_bloqueo' (Balmaceda HC-11): each time this ally blocks,
+ * every attacking ally loses X Force until the Final Phase, where X is this
+ * card's EFFECTIVE force at that moment (not printed).
+ */
+export function hasBlockWeakenAll(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('debilita_atacantes_bloqueo') ?? false;
+}
+
 /** "Defensor": this ally cannot attack, only defend from the defense line. */
 export function hasDefensor(card: Card): boolean {
   return card.habilidadesEspeciales?.includes('defensor') ?? false;
