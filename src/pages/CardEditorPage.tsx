@@ -476,6 +476,11 @@ export function CardEditorPage() {
         <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-3">
           {visibleCatalog.map((card) => (
             <div key={card.id} className="flex flex-col items-center gap-1.5">
+              {/* Nº de la carta en la edición (p.ej. HC-35), para ver la colección */}
+              <div className="text-[10px] font-bold text-slate-400 tracking-wide">
+                {card.expansion ? `${card.expansion}-` : '#'}
+                {card.numeroCarta || '—'}
+              </div>
               <div className="relative">
                 {/* ⚠️ habilidad sin lógica de juego implementada */}
                 {card.logicaPendiente && (
