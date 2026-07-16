@@ -13,6 +13,7 @@ import {
   Search,
   Sparkles,
   Trash2,
+  Wand2,
   X,
 } from 'lucide-react';
 import type { AbilityCategory, Card, CardInPlay, CardType, SpecialAbilityInfo } from '@/types/card.types';
@@ -413,6 +414,11 @@ export function CardEditorPage() {
           <Sparkles size={13} />
           <span className="hidden sm:inline">Habilidades</span>
         </Button>
+        <Button variant="secondary" size="sm" onClick={() => navigate('/crear-habilidad')}
+          className="flex items-center gap-1.5">
+          <Wand2 size={13} />
+          <span className="hidden sm:inline">Crear Habilidad</span>
+        </Button>
         <Button
           variant="secondary"
           size="sm"
@@ -476,10 +482,9 @@ export function CardEditorPage() {
         <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-3">
           {visibleCatalog.map((card) => (
             <div key={card.id} className="flex flex-col items-center gap-1.5">
-              {/* Nº de la carta en la edición (p.ej. HC-35), para ver la colección */}
+              {/* Nº de la carta en la edición (solo el número), para ver la colección */}
               <div className="text-[10px] font-bold text-slate-400 tracking-wide">
-                {card.expansion ? `${card.expansion}-` : '#'}
-                {card.numeroCarta || '—'}
+                {card.numeroCarta ? `Nº ${card.numeroCarta}` : '—'}
               </div>
               <div className="relative">
                 {/* ⚠️ habilidad sin lógica de juego implementada */}

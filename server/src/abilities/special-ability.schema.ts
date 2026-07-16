@@ -35,6 +35,14 @@ export class SpecialAbility {
   /** Tipos de carta a los que aplica (vacío = todos los tipos). */
   @Prop({ type: [String], default: [] })
   tipos: string[];
+
+  /**
+   * Receta declarativa (habilidades hechas con el constructor visual). Si está
+   * presente, el motor la interpreta genéricamente; si no, se usa la lógica
+   * programada por `code`. Estructura libre: { moments, mode, effect }.
+   */
+  @Prop({ type: Object, default: null })
+  definition: Record<string, unknown> | null;
 }
 
 export type SpecialAbilityDocument = HydratedDocument<SpecialAbility>;

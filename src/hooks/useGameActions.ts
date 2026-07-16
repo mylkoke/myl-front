@@ -35,6 +35,8 @@ export function useGameActions() {
   const resolveSwapChoice = useGameStore((s) => s.resolveSwapChoice);
   const swapControl = useGameStore((s) => s.swapControl);
   const activateMillGold = useGameStore((s) => s.activateMillGold);
+  const activateDeclarativeAbility = useGameStore((s) => s.activateDeclarativeAbility);
+  const summonDeclarativeFromZone = useGameStore((s) => s.summonDeclarativeFromZone);
   const chooseRaceSuppress = useGameStore((s) => s.chooseRaceSuppress);
   const resolveTypeChoice = useGameStore((s) => s.resolveTypeChoice);
   const resolvePatriotaTrigger = useGameStore((s) => s.resolvePatriotaTrigger);
@@ -153,6 +155,8 @@ export function useGameActions() {
     millDestroyAlly: guarded(millDestroyAlly),
     destroyNonGoldCard: guarded(destroyNonGoldCard),
     activateMillGold: guarded(activateMillGold),
+    activateDeclarativeAbility: guarded(activateDeclarativeAbility),
+    summonDeclarativeFromZone: guarded(summonDeclarativeFromZone),
     chooseRaceSuppress: guarded(chooseRaceSuppress),
     playFromZone:  guarded(playFromZone),
     // Armas 'relampago' pueden equiparse fuera de turno desde el cementerio.

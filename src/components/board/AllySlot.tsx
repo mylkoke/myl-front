@@ -33,6 +33,9 @@ import {
 } from '@/utils/gameRules';
 import { Modal } from '@/components/ui/Modal';
 import { useTargetingStore } from '@/store/targetingStore';
+import { getDeclarativeAbilitiesOf } from '@/utils/abilityRegistry';
+import { activableAvailableInPhase, isOncePerTurn, isSummonEligible, ZONE_KEY } from '@/utils/abilityInterpreter';
+import { EFFECT_LABELS, ZONE_LABELS, type AbilityDefinition } from '@/types/ability.types';
 
 interface AllySlotProps {
   ally: CardInPlay;
@@ -47,9 +50,11 @@ export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = '
   const [deckSearchOpen, setDeckSearchOpen] = useState(false);
   const { equipWeapon, summonCaudilloFromDeck, weakenAlly, millDestroyAlly, swapControl,
     playRecycledTalisman, activateMillGold, chooseRaceSuppress, equipWeaponFromZone,
-    destroyNonGoldCard } = useGameActions();
+    destroyNonGoldCard, activateDeclarativeAbility, summonDeclarativeFromZone } = useGameActions();
   const [recycleOpen, setRecycleOpen] = useState(false);
   const [razaPickerOpen, setRazaPickerOpen] = useState(false);
+  // Habilidad declarativa 'invocar' con selección en curso (o null).
+  const [declSummon, setDeclSummon] = useState<{ code: string; def: AbilityDefinition } | null>(null);
   const turn   = useGameStore((s) => s.turn);
   const combat = useGameStore((s) => s.combat);
   const player = useGameStore((s) => s.players[playerId]);
@@ -179,6 +184,32 @@ export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = '
               onUse: () => setRazaPickerOpen(true),
             }]
           : []),
+        // Habilidades DECLARATIVAS activables (constructor /crear-habilidad).
+        ...getDeclarativeAbilitiesOf(ally)
+          .filter(({ def }) => def.mode === 'activable')
+          .map(({ code, def }) => {
+            const usable =
+              isMyTurn &&
+              !combat &&
+              !responseWindow &&
+              activableAvailableInPhase(def, turn.phase) &&
+              player.goldCount >= (def.costGold ?? 0) &&
+              (!isOncePerTurn(def) ||
+                !player.allyAbilityUsedThisTurn.includes(abilityUseKey(ally.instanceId, code)));
+            const costTag = def.costGold ? ` (−${def.costGold} Oros)` : '';
+            if (def.effect.kind === 'invocar') {
+              return {
+                label: `${EFFECT_LABELS.invocar}${def.effect.raza ? ` (${def.effect.raza})` : ''}${costTag}`,
+                enabled: usable,
+                onUse: () => setDeclSummon({ code, def }),
+              };
+            }
+            return {
+              label: `${EFFECT_LABELS.mover}${costTag}`,
+              enabled: usable,
+              onUse: () => activateDeclarativeAbility(ally.instanceId, playerId, code),
+            };
+          }),
       ]
     : [];
 
@@ -451,6 +482,26 @@ export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = '
         isEligible={(c) => isSummonableByCaudillo(c, ally)}
         onPlay={(deckIndex) => summonCaudilloFromDeck(ally.instanceId, deckIndex, playerId)}
       />
+
+      {/* Habilidad declarativa 'invocar': busca en la zona origen las cartas
+          que cumplen los filtros (raza/tipo/coste) y juega la elegida. */}
+      {declSummon && declSummon.def.effect.kind === 'invocar' && (() => {
+        const effect = declSummon.def.effect;
+        const zone = (player[ZONE_KEY[effect.from]] as typeof player.deck) ?? [];
+        return (
+          <DeckSearchModal
+            isOpen={!!declSummon}
+            onClose={() => setDeclSummon(null)}
+            title={`${ZONE_LABELS[effect.from]} — ${ally.nombre}`}
+            deck={zone}
+            isEligible={(c) => isSummonEligible(c, effect)}
+            onPlay={(index) => {
+              summonDeclarativeFromZone(ally.instanceId, playerId, declSummon.code, index);
+              setDeclSummon(null);
+            }}
+          />
+        );
+      })()}
 
       {/* 'talisman_reciclado': talismanes del Cementerio + Destierro con coste −3 */}
       <DeckSearchModal

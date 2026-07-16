@@ -7,6 +7,7 @@ import { useGameStore } from '@/store/gameStore';
 import { useOnlineStore, getStoredOnlineGame } from '@/store/onlineStore';
 import { useGameSync } from '@/hooks/useGameSync';
 import { getServices } from '@/services';
+import { loadAbilityDefinitions } from '@/utils/abilityRegistry';
 import { apiGameSyncService } from '@/services/api/gameSyncService';
 
 function Spinner() {
@@ -119,6 +120,12 @@ export function GamePage() {
   }, [roomCode]);
 
   // ── Local setup ──
+  // Carga las recetas declarativas (constructor de habilidades) al registro que
+  // el motor consulta en runtime. Vale para partidas locales y online.
+  useEffect(() => {
+    void loadAbilityDefinitions();
+  }, []);
+
   useEffect(() => {
     if (roomCode) return;
     let cancelled = false;

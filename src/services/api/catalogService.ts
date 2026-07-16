@@ -1,4 +1,5 @@
 import type { Card, SpecialAbilityInfo } from '@/types/card.types';
+import type { AbilityDefinition } from '@/types/ability.types';
 import { apiFetch } from './http';
 
 /** Server card document (snake_case). */
@@ -97,6 +98,7 @@ interface ServerAbility {
   implemented: boolean;
   categoria?: 'especial' | 'carta';
   tipos?: Card['tipo'][];
+  definition?: AbilityDefinition | null;
 }
 
 interface UploadSignature {
@@ -189,6 +191,7 @@ export const apiCatalogService = {
       implemented: a.implemented,
       categoria: a.categoria ?? 'especial',
       tipos: a.tipos ?? [],
+      definition: a.definition ?? null,
     }));
   },
 
@@ -198,6 +201,7 @@ export const apiCatalogService = {
     descripcion: string;
     categoria: 'especial' | 'carta';
     tipos: Card['tipo'][];
+    definition?: AbilityDefinition | null;
   }): Promise<SpecialAbilityInfo> {
     const a = await apiFetch<ServerAbility>('/api/special-abilities', {
       method: 'POST',
@@ -211,6 +215,7 @@ export const apiCatalogService = {
       implemented: a.implemented,
       categoria: a.categoria ?? 'especial',
       tipos: a.tipos ?? [],
+      definition: a.definition ?? null,
     };
   },
 };

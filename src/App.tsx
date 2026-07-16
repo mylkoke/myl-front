@@ -5,6 +5,7 @@ import { GamePage } from '@/pages/GamePage';
 import { LoginPage } from '@/pages/LoginPage';
 import { DeckEditorPage } from '@/pages/DeckEditorPage';
 import { CardEditorPage } from '@/pages/CardEditorPage';
+import { CreateAbilityPage } from '@/pages/CreateAbilityPage';
 import { AdminPage } from '@/pages/AdminPage';
 import { RequireAuth, RequireRole } from '@/components/RequireAuth';
 import { useAuthStore } from '@/store/authStore';
@@ -31,6 +32,14 @@ function App() {
           element={
             <RequireRole roles={['admin', 'supervisor']}>
               <CardEditorPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/crear-habilidad"
+          element={
+            <RequireRole roles={['admin', 'supervisor']}>
+              <CreateAbilityPage />
             </RequireRole>
           }
         />

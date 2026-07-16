@@ -1,3 +1,5 @@
+import type { AbilityDefinition } from './ability.types';
+
 export type SealType = 'real' | 'ultra real' | 'mega real' | string;
 
 export type CardType =
@@ -29,6 +31,12 @@ export interface SpecialAbilityInfo {
   categoria: AbilityCategory;
   /** Tipos de carta a los que aplica (vacío = todos). */
   tipos: CardType[];
+  /**
+   * Receta declarativa creada con el constructor visual (`/crear-habilidad`).
+   * Si está presente, el motor la interpreta genéricamente. `null`/ausente =
+   * habilidad imperativa (lógica programada por `code`).
+   */
+  definition?: AbilityDefinition | null;
 }
 
 export type CardRarity = 'comun' | 'infrecuente' | 'raro' | 'ultra raro';

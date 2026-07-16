@@ -4,6 +4,17 @@ import type { GameState, PlayerState, TurnPhase, PlayerId } from '@/types/game.t
 import type { CardInPlay, Card, CardType } from '@/types/card.types';
 import { createCardInPlay, createCardsInPlay } from '@/utils/cardFactory';
 import { shuffleDeck, drawCards } from '@/utils/deckUtils';
+import { getAbilityDefinition } from '@/utils/abilityRegistry';
+import {
+  runAbilityDefinition,
+  definitionTriggersAt,
+  isAutoMode,
+  isOncePerTurn,
+  activableAvailableInPhase,
+  isSummonEligible,
+  ZONE_KEY as ZONE_TO_STATE_KEY,
+} from '@/utils/abilityInterpreter';
+import { ZONE_LABELS as ZONE_LABELS_STORE, type AbilityMoment } from '@/types/ability.types';
 import {
   INITIAL_HAND_SIZE,
   canPlayCard,
@@ -248,6 +259,53 @@ function maybeRegroup3OnEnter(card: Card, playerId: PlayerId): void {
   useGameStore.getState().addLog(`${card.nombre}: ${p.name} agrupa ${n} Oro(s) a su Reserva al entrar.`, 'action');
 }
 
+/**
+ * Ejecuta las habilidades DECLARATIVAS (recetas del constructor `/crear-habilidad`)
+ * de una carta que se disparan en `moment`, en modo automático/obligatorio.
+ * Las declarativas se identifican por su `code` en el registro; conviven con las
+ * imperativas (que no están en el registro y siguen su lógica programada).
+ */
+function runDeclarativeAbilities(card: Card, playerId: PlayerId, moment: AbilityMoment): void {
+  const codes = card.habilidadesEspeciales ?? [];
+  if (codes.length === 0) return;
+  for (const code of codes) {
+    const def = getAbilityDefinition(code);
+    if (!def) continue; // imperativa: la maneja su propia lógica
+    if (!definitionTriggersAt(def, moment) || !isAutoMode(def.mode)) continue;
+    const st = useGameStore.getState();
+    if (st.isGameOver) return;
+    const owner = st.players[playerId];
+    const result = runAbilityDefinition(owner, def);
+    if (!result) continue;
+    useGameStore.setState({
+      players: { ...st.players, [playerId]: result.owner },
+    });
+    useGameStore.getState().addLog(`${card.nombre}: ${result.log}`, 'action');
+  }
+}
+
+/**
+ * Dispara las habilidades declarativas de fase (agrupacion/vigilia/batalla) de
+ * todas las cartas en juego del jugador `pid` cuando su turno entra en `phase`.
+ * fase_final NO se maneja aquí (lo hace endTurn, una vez por turno).
+ */
+function firePhaseMoment(pid: PlayerId, phase: TurnPhase): void {
+  const moment = momentForPhaseTrigger(phase);
+  if (!moment) return;
+  const p = useGameStore.getState().players[pid];
+  for (const c of [...p.defenseField, ...p.attackField, ...p.supportField, ...p.gold]) {
+    runDeclarativeAbilities(c, pid, moment);
+  }
+}
+
+/** Momento de fase que dispara este cambio de fase (fase_final excluido). */
+function momentForPhaseTrigger(phase: TurnPhase): AbilityMoment | null {
+  if (phase === 'agrupacion') return 'agrupacion';
+  if (phase === 'vigilia') return 'vigilia';
+  if (phase === 'batalla') return 'batalla';
+  return null;
+}
+
 function maybeSelfSummon(card: Card, playerId: PlayerId): void {
   if (card.tipo !== 'aliado' || !hasSelfSummonFromDeck(card)) return;
   const st = useGameStore.getState();
@@ -487,6 +545,26 @@ interface GameActions {
    * cartas de su Mazo Castillo al Cementerio.
    */
   activateMillGold: (sourceInstanceId: string, playerId: PlayerId) => void;
+  /**
+   * Ejecuta una habilidad DECLARATIVA en modo 'activable' (constructor
+   * `/crear-habilidad`) de una carta en juego. Respeta el límite "una vez por
+   * turno" si la receta lo pide.
+   */
+  activateDeclarativeAbility: (
+    sourceInstanceId: string,
+    playerId: PlayerId,
+    code: string,
+  ) => void;
+  /**
+   * Ejecuta una habilidad declarativa 'invocar' (efecto de jugar una carta con
+   * selección) tras elegir el índice de la carta en la zona origen.
+   */
+  summonDeclarativeFromZone: (
+    sourceInstanceId: string,
+    playerId: PlayerId,
+    code: string,
+    cardIndex: number,
+  ) => void;
   /** Resuelve el efecto de una ventana de efecto al cerrarse sin respuesta. */
   resolveWindowEffect: (
     effect: NonNullable<NonNullable<GameState['responseWindow']>['effect']>,
@@ -781,6 +859,7 @@ export const useGameStore = create<GameStore>()(
         maybeDrawOnEnter(card, playerId);
         maybeSelfSummon(card, playerId);
         maybeRegroup3OnEnter(card, playerId);
+        runDeclarativeAbilities(card, playerId, 'entra_juego');
 
         // 'busca_copia_entra' (Escudo Nacional Mercenario): al entrar, si hay
         // copias de esta misma carta en el Castillo o Cementerio, abrir la
@@ -902,6 +981,10 @@ export const useGameStore = create<GameStore>()(
           `${player.name} ataca con ${ally.nombre} (${attackForce} ⚔). ${players[defenderId].name} puede defender.`,
           'combat'
         );
+
+        // Al ENTRAR en Batalla (no en ataques posteriores del mismo turno),
+        // disparar las habilidades declarativas de momento 'batalla'.
+        if (turn.phase !== 'batalla') firePhaseMoment(playerId, 'batalla');
 
         // No defenders available → resolve immediately as undefended.
         if (players[defenderId].defenseField.length === 0) {
@@ -1286,6 +1369,7 @@ export const useGameStore = create<GameStore>()(
         if (player.attackField.length === 0) {
           set((s) => ({ turn: { ...s.turn, phase: 'vigilia' } }));
           get().addLog('Nada más que reagrupar — Fase: Vigilia.', 'system');
+          firePhaseMoment(playerId, 'vigilia');
         }
       },
 
@@ -1335,6 +1419,7 @@ export const useGameStore = create<GameStore>()(
         if (player.goldPaid.length === 0) {
           set((s) => ({ turn: { ...s.turn, phase: 'vigilia' } }));
           get().addLog('Nada más que reagrupar — Fase: Vigilia.', 'system');
+          firePhaseMoment(playerId, 'vigilia');
         }
       },
 
@@ -1419,6 +1504,9 @@ export const useGameStore = create<GameStore>()(
         };
         get().addLog(`Fase: ${LABELS[next]}`, 'system');
 
+        // Habilidades declarativas de fase (agrupacion/vigilia/batalla) del
+        // jugador de turno. fase_final se maneja en endTurn.
+        firePhaseMoment(get().turn.currentPlayer, next);
       },
 
       // ── End turn ──────────────────────────────────────────────────────────
@@ -1436,6 +1524,21 @@ export const useGameStore = create<GameStore>()(
           get().addLog('Hay un combate pendiente: primero se debe defender.', 'error');
           return;
         }
+
+        // Habilidades declarativas de "fase_final": se disparan al comienzo de
+        // la Fase Final del jugador que finaliza, antes de robar del Castillo.
+        // (mutan el store; luego se re-lee el estado.)
+        const endingId = get().turn.currentPlayer;
+        const endingBoard = get().players[endingId];
+        for (const c of [
+          ...endingBoard.defenseField,
+          ...endingBoard.attackField,
+          ...endingBoard.supportField,
+          ...endingBoard.gold,
+        ]) {
+          runDeclarativeAbilities(c, endingId, 'fase_final');
+        }
+
         const { turn, players } = get();
         const currentId = turn.currentPlayer;
         const nextId: PlayerId = currentId === 'player' ? 'opponent' : 'player';
@@ -1519,6 +1622,10 @@ export const useGameStore = create<GameStore>()(
           `Turno ${nextTurn}: turno de ${players[nextId].name} — ${nextPhase === 'agrupacion' ? 'Agrupación' : 'Vigilia'}.`,
           'system'
         );
+
+        // Habilidades declarativas de fase del jugador que recibe el turno
+        // (Agrupación o Vigilia, según cómo arranque su turno).
+        firePhaseMoment(nextId, nextPhase);
       },
 
       initGame: (deckPlayer, deckOpponent) => set(buildInitialState(deckPlayer, deckOpponent)),
@@ -1990,6 +2097,7 @@ export const useGameStore = create<GameStore>()(
         maybeDrawOnEnter(card, playerId);
         maybeSelfSummon(card, playerId);
         maybeRegroup3OnEnter(card, playerId);
+        runDeclarativeAbilities(card, playerId, 'entra_juego');
         set((s) => ({ players: reapplyCostOneSuppression(s.players) }));
       },
 
@@ -2456,6 +2564,7 @@ export const useGameStore = create<GameStore>()(
         maybeTriggerPatriotaEnter(played, playerId);
         maybeSelfSummon(played, playerId);
         maybeRegroup3OnEnter(played, playerId);
+        runDeclarativeAbilities(played, playerId, 'entra_juego');
         set((s) => ({ players: reapplyCostOneSuppression(s.players) }));
 
         const { isOver, winnerId } = checkGameOver(get().players);
@@ -2527,6 +2636,7 @@ export const useGameStore = create<GameStore>()(
         maybeTriggerPatriotaEnter(played, playerId);
         maybeSelfSummon(played, playerId);
         maybeRegroup3OnEnter(played, playerId);
+        runDeclarativeAbilities(played, playerId, 'entra_juego');
         set((s) => ({ players: reapplyCostOneSuppression(s.players) }));
       },
 
@@ -2887,6 +2997,159 @@ export const useGameStore = create<GameStore>()(
         }
       },
 
+      activateDeclarativeAbility: (sourceInstanceId, playerId, code) => {
+        const { players, turn, combat, responseWindow, isGameOver } = get();
+        if (isGameOver || combat || responseWindow) return;
+        const player = players[playerId];
+        if (turn.currentPlayer !== playerId) {
+          get().addLog('No es tu turno.', 'error');
+          return;
+        }
+        const def = getAbilityDefinition(code);
+        if (!def || def.mode !== 'activable') return;
+        // El efecto 'invocar' requiere selección: lo maneja summonDeclarativeFromZone.
+        if (def.effect.kind !== 'mover') return;
+        if (!activableAvailableInPhase(def, turn.phase)) {
+          get().addLog('Esta habilidad no puede activarse en esta fase.', 'error');
+          return;
+        }
+        // La carta debe estar en juego bajo el control del jugador.
+        const inPlay = [
+          ...player.defenseField,
+          ...player.attackField,
+          ...player.supportField,
+          ...player.gold,
+        ].some((c) => c.instanceId === sourceInstanceId);
+        if (!inPlay) return;
+        // Límite "una vez por turno".
+        const useKey = abilityUseKey(sourceInstanceId, code);
+        if (isOncePerTurn(def) && player.allyAbilityUsedThisTurn.includes(useKey)) {
+          get().addLog('Ya usaste esta habilidad este turno.', 'error');
+          return;
+        }
+        // Condición de coste: oros de la Reserva → Oro Pagado.
+        const cost = def.costGold ?? 0;
+        if (player.goldCount < cost) {
+          get().addLog(`Necesitas ${cost} oros disponibles para activar esta habilidad.`, 'error');
+          return;
+        }
+        const result = runAbilityDefinition(player, def);
+        if (!result) {
+          get().addLog('No hay cartas para mover en la zona de origen.', 'system');
+          return;
+        }
+        // Aplica el pago sobre el estado resultante (last N oros de la Reserva).
+        let owner = result.owner;
+        if (cost > 0) {
+          const paid = owner.gold.slice(owner.gold.length - cost);
+          const remaining = owner.gold.slice(0, owner.gold.length - cost);
+          owner = {
+            ...owner,
+            gold: remaining,
+            goldPaid: [...owner.goldPaid, ...paid],
+            goldCount: remaining.length,
+            goldSpentThisTurn: true,
+          };
+        }
+        const usedNext = isOncePerTurn(def)
+          ? [...owner.allyAbilityUsedThisTurn, useKey]
+          : owner.allyAbilityUsedThisTurn;
+        set((s) => ({
+          players: {
+            ...s.players,
+            [playerId]: { ...owner, allyAbilityUsedThisTurn: usedNext },
+          },
+        }));
+        const src =
+          [...player.defenseField, ...player.attackField, ...player.supportField, ...player.gold].find(
+            (c) => c.instanceId === sourceInstanceId,
+          )?.nombre ?? 'Habilidad';
+        get().addLog(`${src}: ${result.log}${cost > 0 ? ` (pagó ${cost} oros)` : ''}`, 'action');
+      },
+
+      summonDeclarativeFromZone: (sourceInstanceId, playerId, code, cardIndex) => {
+        const { players, turn, combat, responseWindow, isGameOver } = get();
+        if (isGameOver || combat || responseWindow) return;
+        const player = players[playerId];
+        if (turn.currentPlayer !== playerId) {
+          get().addLog('No es tu turno.', 'error');
+          return;
+        }
+        const def = getAbilityDefinition(code);
+        if (!def || def.mode !== 'activable' || def.effect.kind !== 'invocar') return;
+        const effect = def.effect;
+        if (!activableAvailableInPhase(def, turn.phase)) {
+          get().addLog('Esta habilidad no puede activarse en esta fase.', 'error');
+          return;
+        }
+        const source = [
+          ...player.defenseField,
+          ...player.attackField,
+          ...player.supportField,
+          ...player.gold,
+        ].find((c) => c.instanceId === sourceInstanceId);
+        if (!source) return;
+        const useKey = abilityUseKey(sourceInstanceId, code);
+        if (isOncePerTurn(def) && player.allyAbilityUsedThisTurn.includes(useKey)) {
+          get().addLog('Ya usaste esta habilidad este turno.', 'error');
+          return;
+        }
+        const cost = def.costGold ?? 0;
+        if (player.goldCount < cost) {
+          get().addLog(`Necesitas ${cost} oros disponibles para activar esta habilidad.`, 'error');
+          return;
+        }
+        // La zona origen del efecto 'invocar' (típicamente el Mazo Castillo).
+        const fromKey = ZONE_TO_STATE_KEY[effect.from];
+        const fromArr = player[fromKey] as (Card | CardInPlay)[];
+        const target = fromArr[cardIndex] as Card | undefined;
+        if (!target || !isSummonEligible(target, effect)) {
+          get().addLog('Esa carta no puede jugarse con esta habilidad.', 'error');
+          return;
+        }
+        const toKey = ZONE_TO_STATE_KEY[effect.to];
+        const paid = cost > 0 ? player.gold.slice(player.gold.length - cost) : [];
+        const remainingGold = cost > 0 ? player.gold.slice(0, player.gold.length - cost) : player.gold;
+        const played = { ...createCardInPlay(target), summonedThisTurn: true };
+
+        set((s) => {
+          const p = s.players[playerId];
+          const newFrom = (p[fromKey] as (Card | CardInPlay)[]).filter((_, i) => i !== cardIndex);
+          const patch: Partial<PlayerState> = {
+            [fromKey]: newFrom,
+            [toKey]: [...(p[toKey] as CardInPlay[]), played],
+            gold: remainingGold,
+            goldPaid: [...p.goldPaid, ...paid],
+            goldCount: remainingGold.length,
+            goldSpentThisTurn: cost > 0 ? true : p.goldSpentThisTurn,
+            allyAbilityUsedThisTurn: isOncePerTurn(def)
+              ? [...p.allyAbilityUsedThisTurn, useKey]
+              : p.allyAbilityUsedThisTurn,
+          } as Partial<PlayerState>;
+          // El Mazo Castillo cambia de tamaño → refleja la vida.
+          if (fromKey === 'deck') patch.life = newFrom.length;
+          return { players: { ...s.players, [playerId]: { ...p, ...patch } } };
+        });
+
+        get().addLog(
+          `${source.nombre}: ${player.name} juega a ${target.nombre} desde ${ZONE_LABELS_STORE[effect.from]}${
+            cost > 0 ? ` pagando ${cost} oros` : ''
+          }.`,
+          'action',
+        );
+
+        // El invocado dispara sus triggers de entrada (incluidas recetas).
+        maybeTriggerPatriotaEnter(target, playerId);
+        maybeDrawOnEnter(target, playerId);
+        maybeSelfSummon(target, playerId);
+        maybeRegroup3OnEnter(target, playerId);
+        runDeclarativeAbilities(target, playerId, 'entra_juego');
+        set((s) => ({ players: reapplyCostOneSuppression(s.players) }));
+
+        const { isOver, winnerId } = checkGameOver(get().players);
+        if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
+      },
+
       activateMillGold: (sourceInstanceId, playerId) => {
         const { players, turn, combat, responseWindow, isGameOver } = get();
         if (isGameOver || combat || responseWindow) return;
@@ -3157,6 +3420,7 @@ export const useGameStore = create<GameStore>()(
         maybeDrawOnEnter(target, playerId);
         maybeSelfSummon(target, playerId);
         maybeRegroup3OnEnter(target, playerId);
+        runDeclarativeAbilities(target, playerId, 'entra_juego');
         set((s) => ({ players: reapplyCostOneSuppression(s.players) }));
 
         const { isOver, winnerId } = checkGameOver(get().players);

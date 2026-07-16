@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { IsArray, IsIn, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { IsArray, IsIn, IsObject, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { AbilityCategory, SpecialAbility, SpecialAbilityDocument } from './special-ability.schema';
 import { SEED_ABILITIES } from '../cards/seed-cards';
 import { JwtAuthGuard, Roles, RolesGuard } from '../auth/guards';
@@ -19,17 +19,19 @@ import { env } from '../config/env';
 
 class CreateAbilityDto {
   @IsString()
-  @Matches(/^[a-z0-9-]+$/, { message: 'El code solo admite minúsculas, números y guiones' })
-  @MaxLength(30)
+  @Matches(/^[a-z0-9_-]+$/, { message: 'El code solo admite minúsculas, números, guiones y guión bajo' })
+  @MaxLength(40)
   code: string;
 
-  @IsString() @MaxLength(40) nombre: string;
-  @IsOptional() @IsString() @MaxLength(300) descripcion?: string;
+  @IsString() @MaxLength(60) nombre: string;
+  @IsOptional() @IsString() @MaxLength(400) descripcion?: string;
   @IsOptional() @IsIn(['especial', 'carta']) categoria?: AbilityCategory;
   @IsOptional()
   @IsArray()
   @IsIn(['aliado', 'totem', 'arma', 'talisman', 'oro'], { each: true })
   tipos?: string[];
+  /** Receta declarativa (constructor visual). Estructura libre. */
+  @IsOptional() @IsObject() definition?: Record<string, unknown>;
 }
 
 @Injectable()
@@ -65,8 +67,10 @@ export class AbilitiesService implements OnModuleInit {
   async create(dto: CreateAbilityDto): Promise<SpecialAbility> {
     const existing = await this.model.findOne({ code: dto.code }).lean();
     if (existing) throw new ConflictException('Ya existe una habilidad con ese code');
-    // New abilities start without a game interaction (implemented: false).
-    const doc = await this.model.create({ ...dto, implemented: false });
+    // Con receta declarativa (definition) la habilidad SÍ es jugable de una
+    // (el motor la interpreta); sin ella nace pendiente de programación.
+    const implemented = !!dto.definition;
+    const doc = await this.model.create({ ...dto, implemented, definition: dto.definition ?? null });
     return doc.toObject();
   }
 }
