@@ -34,6 +34,8 @@ export function canPlayCard(
   turn: TurnState,
   /** Ambos jugadores: necesario para sobrecostes activos ('nombrar_tipo_sobrecoste'). */
   players?: Record<PlayerId, PlayerState>,
+  /** Coste ya resuelto (p.ej. descuento de un aura); reemplaza a `effectiveCost`. */
+  costOverride?: number,
 ): { allowed: boolean; reason?: string } {
   // 'instantaneo' (talismanes) y 'relampago' (cualquier tipo) se juegan a
   // velocidad de respuesta: ignoran la restricción de turno y fase.
@@ -61,7 +63,7 @@ export function canPlayCard(
   // Los talismanes pueden pagarse también con oros virtuales 'oro_talismanes'.
   const available =
     card.tipo === 'talisman' ? player.goldCount + player.talismanGold : player.goldCount;
-  const cost = players ? effectiveCost(card, players) : card.coste;
+  const cost = costOverride ?? (players ? effectiveCost(card, players) : card.coste);
   if (cost > available) {
     return {
       allowed: false,

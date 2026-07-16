@@ -18,6 +18,7 @@ import {
   hasCaudilloGoldAbility,
   hasMachinery,
 } from '@/utils/gameRules';
+import { auraEnablesPlayFromZone } from '@/utils/abilityRegistry';
 import { useTargetingStore } from '@/store/targetingStore';
 
 interface SideZonesProps {
@@ -253,11 +254,21 @@ export function SideZones({ player, playerId, isOpponent = false }: SideZonesPro
   const { activateGoldTalisman, activateGoldDrawDiscard, playFromZone,
     activateGoldChoke, activateGoldDiscardTalisman, activateGoldCaudillo } = useGameActions();
 
-  // Cartas jugables desde zonas ('jugar_desde_cementerio' / 'desde_cementerio'):
-  // la zona brilla dorada y la carta se destaca en el visor.
+  // Coste de jugar una carta desde una zona, o null si no es jugable. Cubre la
+  // habilidad propia ('jugar_desde_cementerio'/'desde_cementerio', coste impreso)
+  // y las auras 'habilitar_juego' de otras cartas propias en juego (coste con
+  // descuento, p.ej. Ignacio Carrera Pinto: Patriotas del Cementerio −2 mín. 1).
+  const playCostFromZone = (card: CardInPlay, zone: 'graveyard' | 'exile'): number | null => {
+    const aura = auraEnablesPlayFromZone(card, zone, player);
+    if (aura !== null) return aura;
+    return canPlayFromZone(card, zone) ? card.coste : null;
+  };
+
+  // Cartas jugables desde zonas: la zona brilla dorada y la carta se destaca.
   const playableFromGraveyard =
-    !isOpponent && player.graveyard.some((c) => canPlayFromZone(c, 'graveyard'));
-  const playableFromExile = !isOpponent && player.exile.some((c) => canPlayFromZone(c, 'exile'));
+    !isOpponent && player.graveyard.some((c) => playCostFromZone(c, 'graveyard') !== null);
+  const playableFromExile =
+    !isOpponent && player.exile.some((c) => playCostFromZone(c, 'exile') !== null);
   const startEquip = useTargetingStore((s) => s.startEquip);
 
   // Regla: un jugador solo puede revisar SUS PROPIAS zonas. Punto de extensión:
@@ -356,24 +367,25 @@ export function SideZones({ player, playerId, isOpponent = false }: SideZonesPro
                       }
                     : null
               : (viewerZone === 'graveyard' || viewerZone === 'exile') && !isOpponent
-              ? (card) =>
-                  canPlayFromZone(card, viewerZone)
-                    ? card.tipo === 'arma' && !hasMachinery(card)
-                      ? {
-                          // Arma normal: hay que elegirle portador (targeting dorado)
-                          label: `Jugar: elegir portador (−${card.coste} Oros)`,
-                          onUse: () => startEquip(card.instanceId, viewerZone, playerId),
-                        }
-                      : {
-                          label: `Jugar carta (−${card.coste} Oros)`,
-                          onUse: () => playFromZone(card.instanceId, viewerZone, playerId),
-                        }
-                    : null
+              ? (card) => {
+                  const cost = playCostFromZone(card, viewerZone);
+                  if (cost === null) return null;
+                  return card.tipo === 'arma' && !hasMachinery(card)
+                    ? {
+                        // Arma normal: hay que elegirle portador (targeting dorado)
+                        label: `Jugar: elegir portador (−${cost} Oros)`,
+                        onUse: () => startEquip(card.instanceId, viewerZone, playerId),
+                      }
+                    : {
+                        label: `Jugar carta (−${cost} Oros)`,
+                        onUse: () => playFromZone(card.instanceId, viewerZone, playerId),
+                      };
+                }
               : undefined
           }
           isHighlighted={
             (viewerZone === 'graveyard' || viewerZone === 'exile') && !isOpponent
-              ? (card) => canPlayFromZone(card, viewerZone)
+              ? (card) => playCostFromZone(card, viewerZone) !== null
               : undefined
           }
         />

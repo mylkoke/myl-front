@@ -14,6 +14,7 @@ import type {
   AbilityMoment,
   AbilityMode,
   AbilityZone,
+  EnablePlayEffect,
   MoveEffect,
   SummonEffect,
 } from '@/types/ability.types';
@@ -52,6 +53,19 @@ export function isSummonEligible(card: Card, effect: SummonEffect): boolean {
   const razaOk = !effect.raza || card.raza === effect.raza;
   const costeOk = effect.maxCoste == null || card.coste <= effect.maxCoste;
   return tipoOk && razaOk && costeOk;
+}
+
+/** ¿La carta cumple los filtros (raza/tipo/coste máx.) de un aura `habilitar_juego`? */
+export function isEnablePlayEligible(card: Card, effect: EnablePlayEffect): boolean {
+  const tipoOk = effect.tipo ? card.tipo === effect.tipo : card.tipo === 'aliado';
+  const razaOk = !effect.raza || card.raza === effect.raza;
+  const costeOk = effect.maxCoste == null || card.coste <= effect.maxCoste;
+  return tipoOk && razaOk && costeOk;
+}
+
+/** Coste a pagar por una carta jugada bajo un aura `habilitar_juego` (con tope). */
+export function enablePlayCost(card: Card, effect: EnablePlayEffect): number {
+  return Math.max(effect.minCoste, card.coste + effect.costDelta);
 }
 
 /** Reduce un CardInPlay a su Card base (para volver al Mazo Castillo). */

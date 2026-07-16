@@ -4,7 +4,7 @@ import type { GameState, PlayerState, TurnPhase, PlayerId } from '@/types/game.t
 import type { CardInPlay, Card, CardType } from '@/types/card.types';
 import { createCardInPlay, createCardsInPlay } from '@/utils/cardFactory';
 import { shuffleDeck, drawCards } from '@/utils/deckUtils';
-import { getAbilityDefinition } from '@/utils/abilityRegistry';
+import { getAbilityDefinition, auraEnablesPlayFromZone } from '@/utils/abilityRegistry';
 import {
   runAbilityDefinition,
   definitionTriggersAt,
@@ -2013,10 +2013,17 @@ export const useGameStore = create<GameStore>()(
           return;
         }
         const card = player[zone].find((c) => c.instanceId === cardInstanceId);
-        if (!card || !canPlayFromZone(card, zone)) return;
+        if (!card) return;
+        // La carta puede jugarse desde la zona por su propia habilidad
+        // ('jugar_desde_cementerio'/'desde_cementerio') o porque un aura del
+        // propietario ('habilitar_juego', p.ej. Ignacio Carrera Pinto) la habilita
+        // con coste reducido. El aura manda el coste; si no, es el efectivo.
+        const auraCost = auraEnablesPlayFromZone(card, zone, player);
+        if (!canPlayFromZone(card, zone) && auraCost === null) return;
 
+        const zoneCost = auraCost ?? effectiveCost(card, players);
         // Mismas reglas que jugar desde la mano (turno, fase, coste, líneas).
-        const { allowed, reason } = canPlayCard(card, player, turn, players);
+        const { allowed, reason } = canPlayCard(card, player, turn, players, zoneCost);
         if (!allowed) {
           get().addLog(reason ?? 'No puedes jugar esa carta ahora.', 'error');
           return;
@@ -2026,8 +2033,6 @@ export const useGameStore = create<GameStore>()(
           get().addLog('Elige un portador para el arma desde el visor de la zona.', 'error');
           return;
         }
-
-        const zoneCost = effectiveCost(card, players);
         // Talismanes: oros virtuales primero (como al jugarlos de la mano).
         const fromVirtual = card.tipo === 'talisman' ? Math.min(player.talismanGold, zoneCost) : 0;
         const fromCards = zoneCost - fromVirtual;

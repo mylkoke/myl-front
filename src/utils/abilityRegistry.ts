@@ -5,9 +5,11 @@
  * las definiciones una vez al iniciar la partida y el intérprete las consulta
  * por código.
  */
-import type { AbilityDefinition } from '@/types/ability.types';
+import type { AbilityDefinition, AbilityZone, EnablePlayEffect } from '@/types/ability.types';
 import type { Card } from '@/types/card.types';
+import type { PlayerState } from '@/types/game.types';
 import { getServices } from '@/services';
+import { enablePlayCost, isEnablePlayEligible } from '@/utils/abilityInterpreter';
 
 const registry = new Map<string, AbilityDefinition>();
 
@@ -26,6 +28,43 @@ export function getDeclarativeAbilitiesOf(card: Card): { code: string; def: Abil
 /** ¿Este `code` corresponde a una habilidad declarativa (con receta)? */
 export function isDeclarative(code: string): boolean {
   return registry.has(code);
+}
+
+/**
+ * Auras `habilitar_juego` activas: recetas (momento `mientras_en_juego`) de las
+ * cartas que el propietario tiene EN JUEGO (defensa/ataque/apoyo). Efecto
+ * continuo: si la carta portadora sale de juego, su aura deja de contarse.
+ */
+export function getEnablePlayAuras(owner: PlayerState): EnablePlayEffect[] {
+  const inPlay = [...owner.defenseField, ...owner.attackField, ...owner.supportField];
+  const auras: EnablePlayEffect[] = [];
+  for (const c of inPlay) {
+    for (const { def } of getDeclarativeAbilitiesOf(c)) {
+      if (def.effect.kind === 'habilitar_juego' && def.moments.includes('mientras_en_juego')) {
+        auras.push(def.effect);
+      }
+    }
+  }
+  return auras;
+}
+
+/**
+ * ¿Algún aura del propietario habilita jugar `card` desde `zone`? Devuelve el
+ * coste a pagar (descuento ya aplicado, con tope) o `null` si ninguna la
+ * habilita. Con varias auras aplicables, gana el menor coste.
+ */
+export function auraEnablesPlayFromZone(
+  card: Card,
+  zone: AbilityZone,
+  owner: PlayerState,
+): number | null {
+  let best: number | null = null;
+  for (const effect of getEnablePlayAuras(owner)) {
+    if (effect.from !== zone || !isEnablePlayEligible(card, effect)) continue;
+    const cost = enablePlayCost(card, effect);
+    best = best === null ? cost : Math.min(best, cost);
+  }
+  return best;
 }
 
 /** Reemplaza el registro con una lista de definiciones (code → definition). */

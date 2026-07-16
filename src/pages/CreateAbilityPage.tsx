@@ -67,10 +67,13 @@ export function CreateAbilityPage() {
   const [countMode, setCountMode] = useState<'fixed' | 'dynamic'>('fixed');
   const [countValue, setCountValue] = useState(1);
   const [countSource, setCountSource] = useState<DynamicCountSource>('allies_controlled');
-  // Efecto 'invocar'.
+  // Efecto 'invocar' y 'habilitar_juego' comparten los filtros de objetivo.
   const [summonRaza, setSummonRaza] = useState('');
   const [summonTipo, setSummonTipo] = useState<CardType | null>(null);
   const [summonMaxCoste, setSummonMaxCoste] = useState('');
+  // Efecto 'habilitar_juego': descuento de coste (reducción positiva) y tope.
+  const [costReduce, setCostReduce] = useState(0);
+  const [minCoste, setMinCoste] = useState(1);
   // Condición: coste de activación en oros (solo activable).
   const [costGold, setCostGold] = useState(0);
 
@@ -89,14 +92,18 @@ export function CreateAbilityPage() {
       ? { kind: 'dynamic', source: countSource }
       : { kind: 'fixed', value: countValue };
 
-  const zonesOk = from !== null && to !== null && from !== to;
+  // 'habilitar_juego' es un aura: solo necesita la zona origen (el destino es
+  // jugar la carta con las reglas normales, no una zona concreta).
+  const isEnablePlay = effectKind === 'habilitar_juego';
+  const usesTargetFilters = effectKind === 'invocar' || isEnablePlay;
+  const zonesOk = isEnablePlay ? from !== null : from !== null && to !== null && from !== to;
   const countOk = countMode === 'dynamic' || countValue > 0;
   const canSave =
     nombre.trim().length > 0 &&
     code.length > 0 &&
     moments.length > 0 &&
     zonesOk &&
-    (effectKind === 'invocar' || countOk) &&
+    (effectKind !== 'mover' || countOk) &&
     !saving;
 
   const buildDefinition = (): AbilityDefinition => {
@@ -111,6 +118,20 @@ export function CreateAbilityPage() {
           raza: summonRaza.trim() || null,
           tipo: summonTipo,
           maxCoste: summonMaxCoste ? Number(summonMaxCoste) : null,
+        },
+      };
+    }
+    if (effectKind === 'habilitar_juego') {
+      return {
+        ...base,
+        effect: {
+          kind: 'habilitar_juego',
+          from: from as AbilityZone,
+          raza: summonRaza.trim() || null,
+          tipo: summonTipo,
+          maxCoste: summonMaxCoste ? Number(summonMaxCoste) : null,
+          costDelta: -costReduce,
+          minCoste: Math.max(0, minCoste),
         },
       };
     }
@@ -156,6 +177,8 @@ export function CreateAbilityPage() {
       setSummonRaza('');
       setSummonTipo(null);
       setSummonMaxCoste('');
+      setCostReduce(0);
+      setMinCoste(1);
       setCostGold(0);
     } catch (err) {
       const text =
@@ -170,13 +193,26 @@ export function CreateAbilityPage() {
 
   // Resumen legible de lo que hará la habilidad (feedback en vivo).
   const preview = useMemo(() => {
-    if (from === null || to === null) return null;
+    if (from === null || (!isEnablePlay && to === null)) return null;
     const when = moments.length
       ? moments.map((m) => MOMENT_LABELS[m]).join(' + ')
       : '(elige un momento)';
     const modeText =
       mode === 'activable' ? 'el jugador puede' : mode === 'obligatoria' ? 'obligatoriamente' : 'automáticamente';
     const costText = mode === 'activable' && costGold > 0 ? ` pagando ${costGold} oros,` : '';
+    if (isEnablePlay) {
+      const filtro = [
+        summonRaza.trim() ? `raza ${summonRaza.trim()}` : null,
+        summonTipo ? `tipo ${summonTipo}` : 'aliado',
+        summonMaxCoste ? `coste ≤ ${summonMaxCoste}` : null,
+      ]
+        .filter(Boolean)
+        .join(', ');
+      const desc =
+        costReduce > 0 ? ` reduciendo su coste en ${costReduce} (mínimo ${Math.max(0, minCoste)})` : '';
+      return `${when}: ${modeText} jugar cartas (${filtro}) desde ${ZONE_LABELS[from]} como si estuvieran en tu Mano${desc}.`;
+    }
+    if (to === null) return null;
     if (effectKind === 'invocar') {
       const filtro = [
         summonRaza.trim() ? `raza ${summonRaza.trim()}` : null,
@@ -194,6 +230,7 @@ export function CreateAbilityPage() {
   }, [
     moments, mode, effectKind, from, to, countMode, countValue, countSource,
     effectiveBarajar, costGold, summonRaza, summonTipo, summonMaxCoste,
+    isEnablePlay, costReduce, minCoste,
   ]);
 
   return (
@@ -304,10 +341,10 @@ export function CreateAbilityPage() {
           </div>
 
           <div className="space-y-4 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-            {/* Origen / destino: comunes a "mover" e "invocar" */}
+            {/* Origen: común a los tres efectos */}
             <div>
               <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1.5">
-                Desde qué lugar (origen)
+                {isEnablePlay ? 'Zona a habilitar (origen)' : 'Desde qué lugar (origen)'}
               </label>
               <LabelPicker
                 tone="amber"
@@ -316,17 +353,20 @@ export function CreateAbilityPage() {
                 options={ZONE_OPTIONS.filter((o) => o.value !== to)}
               />
             </div>
-            <div>
-              <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1.5">
-                Hasta qué lugar (destino)
-              </label>
-              <LabelPicker
-                tone="amber"
-                value={to}
-                onChange={setTo}
-                options={ZONE_OPTIONS.filter((o) => o.value !== from)}
-              />
-            </div>
+            {/* Destino: solo para "mover" e "invocar" (el aura juega con reglas normales) */}
+            {!isEnablePlay && (
+              <div>
+                <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1.5">
+                  Hasta qué lugar (destino)
+                </label>
+                <LabelPicker
+                  tone="amber"
+                  value={to}
+                  onChange={setTo}
+                  options={ZONE_OPTIONS.filter((o) => o.value !== from)}
+                />
+              </div>
+            )}
 
             {effectKind === 'mover' && (
               <>
@@ -388,11 +428,12 @@ export function CreateAbilityPage() {
               </>
             )}
 
-            {effectKind === 'invocar' && (
+            {usesTargetFilters && (
               <>
                 <p className="text-[11px] text-slate-400">
-                  El jugador busca en la zona de origen una carta que cumpla estos filtros, la
-                  elige y la juega en el destino sin pagar su coste impreso.
+                  {isEnablePlay
+                    ? 'Mientras esta carta esté en juego, su dueño puede jugar las cartas de la zona origen que cumplan estos filtros como si estuvieran en su Mano, con las reglas normales de turno/fase.'
+                    : 'El jugador busca en la zona de origen una carta que cumpla estos filtros, la elige y la juega en el destino sin pagar su coste impreso.'}
                 </p>
                 <div>
                   <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1.5">
@@ -430,6 +471,38 @@ export function CreateAbilityPage() {
                     className={`${inputCls} w-28`}
                   />
                 </div>
+                {isEnablePlay && (
+                  <div className="flex gap-4">
+                    <div>
+                      <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1">
+                        Reducir coste en
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={costReduce === 0 ? '' : String(costReduce)}
+                        placeholder="0"
+                        onChange={(e) => setCostReduce(Number(e.target.value.replace(/\D/g, '')) || 0)}
+                        className={`${inputCls} w-24`}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1">
+                        Coste mínimo
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={String(minCoste)}
+                        placeholder="1"
+                        onChange={(e) => setMinCoste(Number(e.target.value.replace(/\D/g, '')) || 0)}
+                        className={`${inputCls} w-24`}
+                      />
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>

@@ -39,7 +39,8 @@ export type AbilityMoment =
   | 'batalla'
   | 'guerra_talismanes'
   | 'fase_final'
-  | 'una_vez_turno';
+  | 'una_vez_turno'
+  | 'mientras_en_juego';
 
 export const MOMENT_LABELS: Record<AbilityMoment, string> = {
   entra_juego: 'Al entrar en juego',
@@ -49,6 +50,7 @@ export const MOMENT_LABELS: Record<AbilityMoment, string> = {
   guerra_talismanes: 'Durante la Guerra de Talismanes',
   fase_final: 'Al comienzo de tu Fase Final',
   una_vez_turno: 'Una vez por turno',
+  mientras_en_juego: 'Mientras esté en juego (aura continua)',
 };
 
 /**
@@ -66,11 +68,12 @@ export const MODE_LABELS: Record<AbilityMode, string> = {
 };
 
 /** Tipos de efecto soportados por el intérprete (extensible). */
-export type AbilityEffectKind = 'mover' | 'invocar';
+export type AbilityEffectKind = 'mover' | 'invocar' | 'habilitar_juego';
 
 export const EFFECT_LABELS: Record<AbilityEffectKind, string> = {
   mover: 'Mover / Barajar cartas',
   invocar: 'Jugar / Invocar una carta',
+  habilitar_juego: 'Habilitar jugar cartas desde otra zona (aura)',
 };
 
 /**
@@ -120,7 +123,32 @@ export interface SummonEffect {
   maxCoste: number | null;
 }
 
-export type AbilityEffect = MoveEffect | SummonEffect;
+/**
+ * Efecto "habilitar_juego" (aura estática, momento `mientras_en_juego`):
+ * mientras la carta portadora esté en juego, su propietario puede jugar OTRAS
+ * cartas que cumplan los filtros (raza/tipo/coste máx.) desde la zona `from`
+ * (típicamente el Cementerio) como si estuvieran en su Mano, con el coste
+ * reducido en `costDelta` (número negativo) hasta un mínimo de `minCoste`.
+ * A diferencia de `invocar`, no es una acción puntual: es un permiso continuo
+ * de cambio de reglas para un conjunto de cartas, no para la portadora.
+ */
+export interface EnablePlayEffect {
+  kind: 'habilitar_juego';
+  /** Zona desde la que se habilita jugar (típicamente el Cementerio). */
+  from: AbilityZone;
+  /** Filtro de raza de las cartas habilitadas (null = cualquier raza). */
+  raza: string | null;
+  /** Filtro de tipo (null = aliado por defecto). */
+  tipo: import('./card.types').CardType | null;
+  /** Coste impreso máximo de las cartas habilitadas (null = sin límite). */
+  maxCoste: number | null;
+  /** Modificador al coste al jugarlas (negativo = descuento; 0 = sin cambio). */
+  costDelta: number;
+  /** Coste mínimo tras aplicar el descuento (tope inferior). */
+  minCoste: number;
+}
+
+export type AbilityEffect = MoveEffect | SummonEffect | EnablePlayEffect;
 
 /** Receta declarativa completa de una habilidad. */
 export interface AbilityDefinition {
