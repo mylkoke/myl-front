@@ -29,6 +29,9 @@ import { CardScanModal } from '@/components/editor/CardScanModal';
 
 const CARD_TYPES: CardType[] = ['aliado', 'totem', 'arma', 'talisman', 'oro'];
 
+/** Versión visible en el footer del editor para verificar despliegues. */
+const APP_VERSION = '1.0.0';
+
 type UploadTarget = 'drive' | 'cloudinary';
 const UPLOAD_TARGET_KEY = 'myl-upload-target';
 
@@ -516,6 +519,11 @@ export function CardEditorPage() {
           ))}
         </div>
       </div>
+
+      {/* Versión de la app: sirve para confirmar que un deploy llegó a producción */}
+      <footer className="px-4 py-3 text-center text-[10px] text-slate-600 border-t border-slate-800/60">
+        MYL Editor · v{APP_VERSION}
+      </footer>
 
       {/* ── Card form modal ── */}
       <Modal
