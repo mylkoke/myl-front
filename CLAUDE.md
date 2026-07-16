@@ -24,6 +24,25 @@ de roles es fijo:
   reglas (¿afecta a ambos jugadores?, ¿una vez por turno?, ¿incluye a la
   propia carta?) se pregunta a Koke — él es la autoridad de las reglas.
 
+**Dos principios de diseño que rigen SIEMPRE:**
+1. **No romper lo que ya funciona.** Antes de tocar puntos compartidos
+   (`playCard`, `resolveCombat`, `effectiveForce`, `effectiveCost`, el modelo
+   de armas, la ventana de respuesta, los `pending*`), entender cómo lo usan
+   las cartas ya implementadas y verificar que el cambio no interfiere. El
+   juego está en producción; un refactor mal hecho rompe decenas de cartas.
+   Correr `tsc` (front + server) tras cada bloque de cambios.
+2. **Preferir habilidades genéricas y reutilizables.** Si una habilidad puede
+   servir a más de una carta, se crea con un `code` genérico y parametrizable
+   en vez de uno atado a una carta concreta. Antes de crear una habilidad
+   nueva, revisar el catálogo (`SEED_ABILITIES` + §9 de JARVIS): si ya existe
+   una equivalente o casi, reutilizarla o generalizarla. Ejemplos ya hechos:
+   `effectiveForce`/`effectiveCost` centralizan fuerza/coste; los guards
+   `isIndestructibleEffective`, `hasInmunidadTalismanesEffective`,
+   `annulBlockReason`, `hasFuriaEffective` combinan la keyword propia con la
+   otorgada por otra carta; `reapplyCostOneSuppression` sirve a Bandera
+   Transición y Héroes de Chile; `targetingStore` cubre todos los efectos con
+   objetivo en tablero.
+
 Cómo descomponer el texto de una carta (regla canónica):
 - **Negrita en la carta física = habilidad especial** (keyword transversal,
   `categoria: 'especial'`): Furia, Relámpago, Imbloqueable, Única, Orbe…
