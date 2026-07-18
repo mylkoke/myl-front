@@ -47,6 +47,7 @@ export function useGameActions() {
   const cancelSelfSummon = useGameStore((s) => s.cancelSelfSummon);
   const summonCheapCaudillo = useGameStore((s) => s.summonCheapCaudillo);
   const resolveFinalDraw = useGameStore((s) => s.resolveFinalDraw);
+  const resolveAnnulRecover = useGameStore((s) => s.resolveAnnulRecover);
   const equipWeaponFromZone = useGameStore((s) => s.equipWeaponFromZone);
   const passResponse = useGameStore((s) => s.passResponse);
   const closeResponseWindow = useGameStore((s) => s.closeResponseWindow);
@@ -145,6 +146,7 @@ export function useGameActions() {
     cancelSelfSummon: ownerGated<[]>(cancelSelfSummon),
     summonCheapCaudillo: guarded(summonCheapCaudillo),
     resolveFinalDraw: ownerGated<[boolean]>(resolveFinalDraw),
+    resolveAnnulRecover: ownerGated<[boolean]>(resolveAnnulRecover),
     swapControl: ownerGated<[string, string, PlayerId]>(swapControl),
     passResponse: ownerGated<[]>(passResponse),
     closeResponseWindow: () => {

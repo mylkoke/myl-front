@@ -69,7 +69,7 @@ export function enablePlayCost(card: Card, effect: EnablePlayEffect): number {
 }
 
 /** Reduce un CardInPlay a su Card base (para volver al Mazo Castillo). */
-function toBaseCard(c: CardInPlay | Card): Card {
+export function toBaseCard(c: CardInPlay | Card): Card {
   // Descarta los campos de instancia; conserva la definición de carta.
   const { instanceId, tapped, attackedThisTurn, summonedThisTurn, ...card } = c as CardInPlay;
   void instanceId;

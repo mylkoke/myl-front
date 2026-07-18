@@ -199,6 +199,19 @@ export interface GameState {
    * Final de su controlador, puede robar 2 cartas. Se sincroniza online.
    */
   pendingFinalDraw: { playerId: PlayerId; sourceName: string } | null;
+  /**
+   * Decisión declarativa 'al_ser_anulado' + 'recuperar_self' (Juan Mackenna):
+   * al ser anulada, su dueño puede botar `millCount` cartas de su Castillo para
+   * devolverla desde Removidas a la zona `toZone` (típicamente la Mano). Solo
+   * se abre si el Castillo alcanza el coste. Se sincroniza online.
+   */
+  pendingAnnulRecover: {
+    playerId: PlayerId;
+    cardInstanceId: string;
+    cardName: string;
+    toZone: import('./ability.types').AbilityZone;
+    millCount: number;
+  } | null;
   responseWindow: {
     /** Carta recién jugada (ya en su zona) que puede ser anulada */
     cardInstanceId: string;

@@ -49,6 +49,20 @@ export function getEnablePlayAuras(owner: PlayerState): EnablePlayEffect[] {
 }
 
 /**
+ * Receta de recuperación al ser anulada de una carta: busca una definición
+ * declarativa con momento `al_ser_anulado` y efecto `recuperar_self`. Devuelve
+ * la zona destino y el coste de botado (mill), o `null` si la carta no la tiene.
+ */
+export function getAnnulRecover(card: Card): { toZone: AbilityZone; millCount: number } | null {
+  for (const { def } of getDeclarativeAbilitiesOf(card)) {
+    if (def.effect.kind === 'recuperar_self' && def.moments.includes('al_ser_anulado')) {
+      return { toZone: def.effect.to, millCount: Math.max(0, def.costMill ?? 0) };
+    }
+  }
+  return null;
+}
+
+/**
  * ¿Algún aura del propietario habilita jugar `card` desde `zone`? Devuelve el
  * coste a pagar (descuento ya aplicado, con tope) o `null` si ninguna la
  * habilita. Con varias auras aplicables, gana el menor coste.

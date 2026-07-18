@@ -58,11 +58,12 @@ export function GameBoard() {
   const pendingCopyTutor = useGameStore((s) => s.pendingCopyTutor);
   const pendingSelfSummon = useGameStore((s) => s.pendingSelfSummon);
   const pendingFinalDraw = useGameStore((s) => s.pendingFinalDraw);
+  const pendingAnnulRecover = useGameStore((s) => s.pendingAnnulRecover);
   const responseWindow = useGameStore((s) => s.responseWindow);
   const { discardFromHand, respondWithAnnul, passResponse, closeResponseWindow, resolveShuffleChoice,
     resolveSwapChoice, resolveTypeChoice, resolvePatriotaTrigger, pickPatriotaGraveyardCard,
     discardRivalTalisman, tutorCopyFromZone, cancelCopyTutor,
-    resolveSelfSummon, cancelSelfSummon, resolveFinalDraw,
+    resolveSelfSummon, cancelSelfSummon, resolveFinalDraw, resolveAnnulRecover,
     playCard: playCardAction } = useGameActions();
   const pendingSwapChoice = useGameStore((s) => s.pendingSwapChoice);
   const pendingTypeChoice = useGameStore((s) => s.pendingTypeChoice);
@@ -760,6 +761,36 @@ export function GameBoard() {
                 variant="secondary"
                 fullWidth
                 onClick={() => resolveFinalDraw(false, pendingFinalDraw.playerId)}
+              >
+                No
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingAnnulRecover && (!isOnline || mySeat === pendingAnnulRecover.playerId) && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
+          <div className="w-full max-w-sm bg-slate-900 border border-amber-500/40 rounded-2xl p-4 sm:p-6 shadow-2xl text-center">
+            <div className="text-amber-300 text-xs uppercase tracking-widest font-bold">
+              {pendingAnnulRecover.cardName} anulada
+            </div>
+            <p className="text-slate-300 text-sm mt-2 mb-4">
+              ¿Botar {pendingAnnulRecover.millCount} cartas de tu Mazo Castillo para devolver a{' '}
+              {pendingAnnulRecover.cardName} a tu Mano?
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="primary"
+                fullWidth
+                onClick={() => resolveAnnulRecover(true, pendingAnnulRecover.playerId)}
+              >
+                Sí, botar {pendingAnnulRecover.millCount}
+              </Button>
+              <Button
+                variant="secondary"
+                fullWidth
+                onClick={() => resolveAnnulRecover(false, pendingAnnulRecover.playerId)}
               >
                 No
               </Button>

@@ -24,6 +24,7 @@ export function snapshotGameState(): GameState {
     pendingCopyTutor: s.pendingCopyTutor,
     pendingSelfSummon: s.pendingSelfSummon,
     pendingFinalDraw: s.pendingFinalDraw,
+    pendingAnnulRecover: s.pendingAnnulRecover,
     responseWindow: s.responseWindow,
     fxLightning: s.fxLightning,
   };

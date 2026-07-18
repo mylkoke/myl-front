@@ -40,7 +40,8 @@ export type AbilityMoment =
   | 'guerra_talismanes'
   | 'fase_final'
   | 'una_vez_turno'
-  | 'mientras_en_juego';
+  | 'mientras_en_juego'
+  | 'al_ser_anulado';
 
 export const MOMENT_LABELS: Record<AbilityMoment, string> = {
   entra_juego: 'Al entrar en juego',
@@ -51,6 +52,7 @@ export const MOMENT_LABELS: Record<AbilityMoment, string> = {
   fase_final: 'Al comienzo de tu Fase Final',
   una_vez_turno: 'Una vez por turno',
   mientras_en_juego: 'Mientras esté en juego (aura continua)',
+  al_ser_anulado: 'Al ser anulada',
 };
 
 /**
@@ -68,12 +70,13 @@ export const MODE_LABELS: Record<AbilityMode, string> = {
 };
 
 /** Tipos de efecto soportados por el intérprete (extensible). */
-export type AbilityEffectKind = 'mover' | 'invocar' | 'habilitar_juego';
+export type AbilityEffectKind = 'mover' | 'invocar' | 'habilitar_juego' | 'recuperar_self';
 
 export const EFFECT_LABELS: Record<AbilityEffectKind, string> = {
   mover: 'Mover / Barajar cartas',
   invocar: 'Jugar / Invocar una carta',
   habilitar_juego: 'Habilitar jugar cartas desde otra zona (aura)',
+  recuperar_self: 'Recuperar esta misma carta a otra zona',
 };
 
 /**
@@ -148,7 +151,20 @@ export interface EnablePlayEffect {
   minCoste: number;
 }
 
-export type AbilityEffect = MoveEffect | SummonEffect | EnablePlayEffect;
+/**
+ * Efecto "recuperar_self": mueve LA PROPIA carta portadora a la zona `to`
+ * (típicamente la Mano), venga de donde venga (p.ej. Removidas tras ser
+ * anulada). A diferencia de `mover`, el objetivo no son cartas del frente de
+ * una zona sino la carta que lleva la habilidad. Suele combinarse con el
+ * momento `al_ser_anulado`, modo activable y un `costMill` (botar del Castillo).
+ */
+export interface RecoverSelfEffect {
+  kind: 'recuperar_self';
+  /** Zona destino de la carta recuperada (típicamente la Mano). */
+  to: AbilityZone;
+}
+
+export type AbilityEffect = MoveEffect | SummonEffect | EnablePlayEffect | RecoverSelfEffect;
 
 /** Receta declarativa completa de una habilidad. */
 export interface AbilityDefinition {
@@ -160,4 +176,10 @@ export interface AbilityDefinition {
    * la habilidad (solo tiene sentido en modo 'activable'). 0/ausente = gratis.
    */
   costGold?: number;
+  /**
+   * Coste alternativo/adicional: cartas del propio Mazo Castillo que se botan al
+   * Cementerio al usar la habilidad (mill). Si el Castillo no alcanza, la
+   * habilidad no puede pagarse. 0/ausente = no bota.
+   */
+  costMill?: number;
 }

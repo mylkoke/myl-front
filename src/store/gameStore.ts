@@ -4,7 +4,7 @@ import type { GameState, PlayerState, TurnPhase, PlayerId } from '@/types/game.t
 import type { CardInPlay, Card, CardType } from '@/types/card.types';
 import { createCardInPlay, createCardsInPlay } from '@/utils/cardFactory';
 import { shuffleDeck, drawCards } from '@/utils/deckUtils';
-import { getAbilityDefinition, auraEnablesPlayFromZone } from '@/utils/abilityRegistry';
+import { getAbilityDefinition, auraEnablesPlayFromZone, getAnnulRecover } from '@/utils/abilityRegistry';
 import {
   runAbilityDefinition,
   definitionTriggersAt,
@@ -12,6 +12,7 @@ import {
   isOncePerTurn,
   activableAvailableInPhase,
   isSummonEligible,
+  toBaseCard,
   ZONE_KEY as ZONE_TO_STATE_KEY,
 } from '@/utils/abilityInterpreter';
 import { ZONE_LABELS as ZONE_LABELS_STORE, type AbilityMoment } from '@/types/ability.types';
@@ -374,6 +375,7 @@ export function buildInitialState(
     pendingCopyTutor: null,
     pendingSelfSummon: null,
     pendingFinalDraw: null,
+    pendingAnnulRecover: null,
     responseWindow: null,
     fxLightning: null,
     gameLog: [
@@ -616,6 +618,12 @@ interface GameActions {
   summonCheapCaudillo: (sourceInstanceId: string, deckIndex: number, playerId: PlayerId) => void;
   /** 'fase_final_roba2' (Diego Portales): resuelve la decisión de robar 2. */
   resolveFinalDraw: (accept: boolean, playerId: PlayerId) => void;
+  /**
+   * 'al_ser_anulado' + 'recuperar_self' (Juan Mackenna): resuelve la decisión
+   * de botar `millCount` del Castillo para recuperar la carta anulada desde
+   * Removidas a su zona destino (o dejarla removida si se rechaza).
+   */
+  resolveAnnulRecover: (accept: boolean, playerId: PlayerId) => void;
   /** Replace the whole game state (online sync). */
   hydrateState: (state: GameState) => void;
   addLog: (msg: string, type?: GameLogEntry['type']) => void;
@@ -2674,6 +2682,51 @@ export const useGameStore = create<GameStore>()(
         get().addLog(`${pendingFinalDraw.sourceName}: ${player.name} roba ${n} cartas en su Fase Final.`, 'action');
       },
 
+      resolveAnnulRecover: (accept, playerId) => {
+        const { pendingAnnulRecover, players } = get();
+        if (!pendingAnnulRecover || pendingAnnulRecover.playerId !== playerId) return;
+        const { cardInstanceId, cardName, toZone, millCount } = pendingAnnulRecover;
+        const player = players[playerId];
+        if (!accept) {
+          set({ pendingAnnulRecover: null });
+          get().addLog(`${player.name} deja a ${cardName} en Removidas.`, 'system');
+          return;
+        }
+        // Requiere botar millCount del Castillo; si no alcanza, no se puede.
+        const card = player.removed.find((c) => c.instanceId === cardInstanceId);
+        if (!card || player.deck.length < millCount) {
+          set({ pendingAnnulRecover: null });
+          get().addLog(`${player.name} no puede recuperar a ${cardName} (Castillo insuficiente).`, 'error');
+          return;
+        }
+        const toKey = ZONE_TO_STATE_KEY[toZone];
+        const milled = player.deck.slice(0, millCount).map(toBaseCard);
+        const remainingDeck = player.deck.slice(millCount);
+        set((s) => {
+          const p = s.players[playerId];
+          const recovered = 'instanceId' in card ? card : createCardInPlay(card);
+          const dest = [...(p[toKey] as CardInPlay[]), recovered];
+          return {
+            pendingAnnulRecover: null,
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                deck: remainingDeck,
+                life: remainingDeck.length,
+                graveyard: [...p.graveyard, ...milled],
+                removed: p.removed.filter((c) => c.instanceId !== cardInstanceId),
+                [toKey]: dest,
+              },
+            },
+          };
+        });
+        get().addLog(
+          `${player.name} bota ${millCount} carta(s) del Castillo y recupera a ${cardName} a su ${ZONE_LABELS_STORE[toZone]}.`,
+          'action',
+        );
+      },
+
       resolveTypeChoice: (tipo, playerId) => {
         const { pendingTypeChoice } = get();
         if (!pendingTypeChoice || pendingTypeChoice.playerId !== playerId) return;
@@ -2948,6 +3001,30 @@ export const useGameStore = create<GameStore>()(
             `${target.nombre}: al ser anulada, los aliados de ${owner.name} ganan +${ANNUL_TRIGGER_BONUS} de Fuerza hasta la Fase Final.`,
             'action'
           );
+        }
+
+        // 'al_ser_anulado' + 'recuperar_self' (Juan Mackenna): al ser anulada,
+        // su dueño DECIDE botar N del Castillo para devolverla de Removidas a su
+        // Mano (modal `pendingAnnulRecover`). Solo se ofrece si el Castillo alcanza.
+        const recover = getAnnulRecover(target);
+        if (recover) {
+          const ownerAfter = get().players[responseWindow.cardOwnerId];
+          if (ownerAfter.deck.length >= recover.millCount) {
+            set({
+              pendingAnnulRecover: {
+                playerId: responseWindow.cardOwnerId,
+                cardInstanceId: target.instanceId,
+                cardName: target.nombre,
+                toZone: recover.toZone,
+                millCount: recover.millCount,
+              },
+            });
+          } else {
+            get().addLog(
+              `${target.nombre} fue anulada, pero ${owner.name} no tiene ${recover.millCount} cartas en el Castillo para recuperarla.`,
+              'system',
+            );
+          }
         }
 
         const { isOver, winnerId } = checkGameOver(get().players);

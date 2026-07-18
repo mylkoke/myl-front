@@ -76,6 +76,8 @@ export function CreateAbilityPage() {
   const [minCoste, setMinCoste] = useState(1);
   // Condición: coste de activación en oros (solo activable).
   const [costGold, setCostGold] = useState(0);
+  // Condición: botar N cartas del propio Castillo al Cementerio (solo activable).
+  const [costMill, setCostMill] = useState(0);
 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
@@ -93,10 +95,18 @@ export function CreateAbilityPage() {
       : { kind: 'fixed', value: countValue };
 
   // 'habilitar_juego' es un aura: solo necesita la zona origen (el destino es
-  // jugar la carta con las reglas normales, no una zona concreta).
+  // jugar la carta con las reglas normales). 'recuperar_self' solo necesita el
+  // destino (el origen es "donde esté la propia carta").
   const isEnablePlay = effectKind === 'habilitar_juego';
+  const isRecoverSelf = effectKind === 'recuperar_self';
   const usesTargetFilters = effectKind === 'invocar' || isEnablePlay;
-  const zonesOk = isEnablePlay ? from !== null : from !== null && to !== null && from !== to;
+  const needsFrom = !isRecoverSelf;
+  const needsTo = !isEnablePlay;
+  const zonesOk = isRecoverSelf
+    ? to !== null
+    : isEnablePlay
+    ? from !== null
+    : from !== null && to !== null && from !== to;
   const countOk = countMode === 'dynamic' || countValue > 0;
   const canSave =
     nombre.trim().length > 0 &&
@@ -107,7 +117,15 @@ export function CreateAbilityPage() {
     !saving;
 
   const buildDefinition = (): AbilityDefinition => {
-    const base = { moments, mode, costGold: mode === 'activable' ? costGold : 0 };
+    const base = {
+      moments,
+      mode,
+      costGold: mode === 'activable' ? costGold : 0,
+      costMill: mode === 'activable' ? costMill : 0,
+    };
+    if (effectKind === 'recuperar_self') {
+      return { ...base, effect: { kind: 'recuperar_self', to: to as AbilityZone } };
+    }
     if (effectKind === 'invocar') {
       return {
         ...base,
@@ -180,6 +198,7 @@ export function CreateAbilityPage() {
       setCostReduce(0);
       setMinCoste(1);
       setCostGold(0);
+      setCostMill(0);
     } catch (err) {
       const text =
         err instanceof ApiError
@@ -193,13 +212,23 @@ export function CreateAbilityPage() {
 
   // Resumen legible de lo que hará la habilidad (feedback en vivo).
   const preview = useMemo(() => {
-    if (from === null || (!isEnablePlay && to === null)) return null;
+    if (needsFrom && from === null) return null;
+    if (needsTo && to === null) return null;
     const when = moments.length
       ? moments.map((m) => MOMENT_LABELS[m]).join(' + ')
       : '(elige un momento)';
     const modeText =
       mode === 'activable' ? 'el jugador puede' : mode === 'obligatoria' ? 'obligatoriamente' : 'automáticamente';
-    const costText = mode === 'activable' && costGold > 0 ? ` pagando ${costGold} oros,` : '';
+    const costParts =
+      mode === 'activable'
+        ? [costGold > 0 ? `${costGold} oros` : null, costMill > 0 ? `botar ${costMill} del Castillo` : null].filter(
+            Boolean,
+          )
+        : [];
+    const costText = costParts.length ? ` pagando ${costParts.join(' y ')},` : '';
+    if (isRecoverSelf && to !== null) {
+      return `${when}:${costText} ${modeText} devolver esta misma carta a ${ZONE_LABELS[to]}.`;
+    }
     if (isEnablePlay) {
       const filtro = [
         summonRaza.trim() ? `raza ${summonRaza.trim()}` : null,
@@ -229,8 +258,8 @@ export function CreateAbilityPage() {
     return `${when}:${costText} ${modeText} mover ${cantidad} de ${ZONE_LABELS[from]} a ${ZONE_LABELS[to]}${shuffle}.`;
   }, [
     moments, mode, effectKind, from, to, countMode, countValue, countSource,
-    effectiveBarajar, costGold, summonRaza, summonTipo, summonMaxCoste,
-    isEnablePlay, costReduce, minCoste,
+    effectiveBarajar, costGold, costMill, summonRaza, summonTipo, summonMaxCoste,
+    isEnablePlay, isRecoverSelf, needsFrom, needsTo, costReduce, minCoste,
   ]);
 
   return (
@@ -314,20 +343,37 @@ export function CreateAbilityPage() {
 
         {/* Condición: coste de activación (solo activable) */}
         {mode === 'activable' && (
-          <section>
-            <h2 className="text-sm font-semibold text-white mb-1">Condición: coste en Oros</h2>
-            <p className="text-xs text-slate-500 mb-2">
-              Al activar, estos Oros pasan de la Reserva a Oro Pagado. 0 = gratis.
-            </p>
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              value={costGold === 0 ? '' : String(costGold)}
-              placeholder="0"
-              onChange={(e) => setCostGold(Number(e.target.value.replace(/\D/g, '')) || 0)}
-              className={`${inputCls} w-28`}
-            />
+          <section className="flex gap-6">
+            <div>
+              <h2 className="text-sm font-semibold text-white mb-1">Coste en Oros</h2>
+              <p className="text-xs text-slate-500 mb-2">
+                Pasan de la Reserva a Oro Pagado. 0 = gratis.
+              </p>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={costGold === 0 ? '' : String(costGold)}
+                placeholder="0"
+                onChange={(e) => setCostGold(Number(e.target.value.replace(/\D/g, '')) || 0)}
+                className={`${inputCls} w-24`}
+              />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-white mb-1">Botar del Castillo</h2>
+              <p className="text-xs text-slate-500 mb-2">
+                Cartas del Mazo Castillo al Cementerio. 0 = ninguna.
+              </p>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={costMill === 0 ? '' : String(costMill)}
+                placeholder="0"
+                onChange={(e) => setCostMill(Number(e.target.value.replace(/\D/g, '')) || 0)}
+                className={`${inputCls} w-24`}
+              />
+            </div>
           </section>
         )}
 
@@ -341,23 +387,32 @@ export function CreateAbilityPage() {
           </div>
 
           <div className="space-y-4 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-            {/* Origen: común a los tres efectos */}
-            <div>
-              <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1.5">
-                {isEnablePlay ? 'Zona a habilitar (origen)' : 'Desde qué lugar (origen)'}
-              </label>
-              <LabelPicker
-                tone="amber"
-                value={from}
-                onChange={setFrom}
-                options={ZONE_OPTIONS.filter((o) => o.value !== to)}
-              />
-            </div>
-            {/* Destino: solo para "mover" e "invocar" (el aura juega con reglas normales) */}
-            {!isEnablePlay && (
+            {isRecoverSelf && (
+              <p className="text-[11px] text-slate-400">
+                Devuelve LA PROPIA carta (la que lleva esta habilidad) a la zona destino,
+                venga de donde venga. Úsalo con el momento "Al ser anulada" y un coste de
+                botado para recuperarla desde Removidas.
+              </p>
+            )}
+            {/* Origen: mover / invocar / habilitar_juego (no recuperar_self) */}
+            {needsFrom && (
               <div>
                 <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1.5">
-                  Hasta qué lugar (destino)
+                  {isEnablePlay ? 'Zona a habilitar (origen)' : 'Desde qué lugar (origen)'}
+                </label>
+                <LabelPicker
+                  tone="amber"
+                  value={from}
+                  onChange={setFrom}
+                  options={ZONE_OPTIONS.filter((o) => o.value !== to)}
+                />
+              </div>
+            )}
+            {/* Destino: mover / invocar / recuperar_self (el aura juega con reglas normales) */}
+            {needsTo && (
+              <div>
+                <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1.5">
+                  {isRecoverSelf ? 'Devolver esta carta a (destino)' : 'Hasta qué lugar (destino)'}
                 </label>
                 <LabelPicker
                   tone="amber"
