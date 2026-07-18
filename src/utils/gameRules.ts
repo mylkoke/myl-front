@@ -1,5 +1,6 @@
 import type { CardInPlay, Card } from '@/types/card.types';
 import type { PlayerId, PlayerState, TurnState } from '@/types/game.types';
+import { getDeclarativeForceBuff } from '@/utils/abilityRegistry';
 
 export const INITIAL_HAND_SIZE = 5;
 export const MAX_GOLD_CARDS    = 15;
@@ -686,7 +687,8 @@ export function effectiveForce(
     weaponForceBonus(ally, owner) +
     (owner.weaponTempBonuses[ally.instanceId] ?? 0) +
     patriotaBonus(ally, owner, players) +
-    graveyardForceBonus(ally, owner)
+    graveyardForceBonus(ally, owner) +
+    getDeclarativeForceBuff(ally, owner, players)
   );
 }
 

@@ -70,13 +70,19 @@ export const MODE_LABELS: Record<AbilityMode, string> = {
 };
 
 /** Tipos de efecto soportados por el intérprete (extensible). */
-export type AbilityEffectKind = 'mover' | 'invocar' | 'habilitar_juego' | 'recuperar_self';
+export type AbilityEffectKind =
+  | 'mover'
+  | 'invocar'
+  | 'habilitar_juego'
+  | 'recuperar_self'
+  | 'buff_fuerza';
 
 export const EFFECT_LABELS: Record<AbilityEffectKind, string> = {
   mover: 'Mover / Barajar cartas',
   invocar: 'Jugar / Invocar una carta',
   habilitar_juego: 'Habilitar jugar cartas desde otra zona (aura)',
-  recuperar_self: 'Recuperar esta misma carta a otra zona',
+  recuperar_self: 'Recuperar / agrupar esta misma carta a otra zona',
+  buff_fuerza: 'Bonificar la Fuerza de aliados (aura)',
 };
 
 /**
@@ -164,7 +170,30 @@ export interface RecoverSelfEffect {
   to: AbilityZone;
 }
 
-export type AbilityEffect = MoveEffect | SummonEffect | EnablePlayEffect | RecoverSelfEffect;
+/**
+ * Efecto "buff_fuerza" (aura estática, momento `mientras_en_juego`): mientras la
+ * carta portadora esté en juego, los Aliados del controlador de raza `targetRaza`
+ * (null = todos) ganan `amount` de Fuerza por cada Aliado de raza `countRaza`
+ * (null = cualquiera) en juego. `scope` decide si se cuentan solo los aliados del
+ * controlador o los de ambos jugadores; `excludeSelf` no cuenta al propio aliado
+ * que recibe el bono ("por cada OTRO"). Dinámico: se recalcula en `effectiveForce`.
+ * Ej. Paula Jaraquemada: targetRaza=countRaza='Caudillo', amount=1, excludeSelf.
+ */
+export interface ForceBuffEffect {
+  kind: 'buff_fuerza';
+  targetRaza: string | null;
+  countRaza: string | null;
+  amount: number;
+  scope: 'owner' | 'both';
+  excludeSelf: boolean;
+}
+
+export type AbilityEffect =
+  | MoveEffect
+  | SummonEffect
+  | EnablePlayEffect
+  | RecoverSelfEffect
+  | ForceBuffEffect;
 
 /** Receta declarativa completa de una habilidad. */
 export interface AbilityDefinition {

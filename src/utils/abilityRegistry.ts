@@ -6,8 +6,8 @@
  * por código.
  */
 import type { AbilityDefinition, AbilityZone, EnablePlayEffect } from '@/types/ability.types';
-import type { Card } from '@/types/card.types';
-import type { PlayerState } from '@/types/game.types';
+import type { Card, CardInPlay } from '@/types/card.types';
+import type { PlayerId, PlayerState } from '@/types/game.types';
 import { getServices } from '@/services';
 import { enablePlayCost, isEnablePlayEligible } from '@/utils/abilityInterpreter';
 
@@ -46,6 +46,59 @@ export function getEnablePlayAuras(owner: PlayerState): EnablePlayEffect[] {
     }
   }
   return auras;
+}
+
+/**
+ * Bono de Fuerza declarativo ('buff_fuerza', aura `mientras_en_juego`) que
+ * recibe `ally` por las cartas EN JUEGO de su controlador `owner`. Dinámico:
+ * cuenta aliados de `countRaza` en el ámbito `scope` (propio o ambos jugadores),
+ * excluyendo al propio aliado si `excludeSelf`. Se integra en `effectiveForce`.
+ */
+export function getDeclarativeForceBuff(
+  ally: CardInPlay,
+  owner: PlayerState,
+  players: Record<PlayerId, PlayerState>,
+): number {
+  if (ally.tipo !== 'aliado') return 0;
+  let bonus = 0;
+  for (const source of [...owner.defenseField, ...owner.attackField]) {
+    for (const { def } of getDeclarativeAbilitiesOf(source)) {
+      if (def.effect.kind !== 'buff_fuerza' || !def.moments.includes('mientras_en_juego')) continue;
+      const e = def.effect;
+      // ¿Este aliado recibe el bono? (raza objetivo)
+      if (e.targetRaza && ally.raza !== e.targetRaza) continue;
+      const pool =
+        e.scope === 'both'
+          ? Object.values(players).flatMap((p) => [...p.defenseField, ...p.attackField])
+          : [...owner.defenseField, ...owner.attackField];
+      let count = pool.filter(
+        (c) => c.tipo === 'aliado' && (!e.countRaza || c.raza === e.countRaza),
+      ).length;
+      // "por cada OTRO": no contar al propio aliado si él mismo entra en el conteo.
+      if (e.excludeSelf && (!e.countRaza || ally.raza === e.countRaza)) count -= 1;
+      bonus += e.amount * Math.max(0, count);
+    }
+  }
+  return bonus;
+}
+
+/**
+ * ¿La carta tiene una habilidad declarativa activable en la Fase Final que la
+ * agrupe a sí misma (`recuperar_self` con momento `fase_final`)? Devuelve la zona
+ * destino (típicamente la Línea de Defensa) o `null`. Usado para abrir el modal
+ * de agrupado al comenzar la Fase Final.
+ */
+export function getFaseFinalSelfMove(card: Card): { toZone: AbilityZone } | null {
+  for (const { def } of getDeclarativeAbilitiesOf(card)) {
+    if (
+      def.effect.kind === 'recuperar_self' &&
+      def.moments.includes('fase_final') &&
+      def.mode === 'activable'
+    ) {
+      return { toZone: def.effect.to };
+    }
+  }
+  return null;
 }
 
 /**

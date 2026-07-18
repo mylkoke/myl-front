@@ -59,11 +59,12 @@ export function GameBoard() {
   const pendingSelfSummon = useGameStore((s) => s.pendingSelfSummon);
   const pendingFinalDraw = useGameStore((s) => s.pendingFinalDraw);
   const pendingAnnulRecover = useGameStore((s) => s.pendingAnnulRecover);
+  const pendingSelfRegroup = useGameStore((s) => s.pendingSelfRegroup);
   const responseWindow = useGameStore((s) => s.responseWindow);
   const { discardFromHand, respondWithAnnul, passResponse, closeResponseWindow, resolveShuffleChoice,
     resolveSwapChoice, resolveTypeChoice, resolvePatriotaTrigger, pickPatriotaGraveyardCard,
     discardRivalTalisman, tutorCopyFromZone, cancelCopyTutor,
-    resolveSelfSummon, cancelSelfSummon, resolveFinalDraw, resolveAnnulRecover,
+    resolveSelfSummon, cancelSelfSummon, resolveFinalDraw, resolveAnnulRecover, resolveSelfRegroup,
     playCard: playCardAction } = useGameActions();
   const pendingSwapChoice = useGameStore((s) => s.pendingSwapChoice);
   const pendingTypeChoice = useGameStore((s) => s.pendingTypeChoice);
@@ -791,6 +792,35 @@ export function GameBoard() {
                 variant="secondary"
                 fullWidth
                 onClick={() => resolveAnnulRecover(false, pendingAnnulRecover.playerId)}
+              >
+                No
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingSelfRegroup && (!isOnline || mySeat === pendingSelfRegroup.playerId) && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
+          <div className="w-full max-w-sm bg-slate-900 border border-sky-500/40 rounded-2xl p-4 sm:p-6 shadow-2xl text-center">
+            <div className="text-sky-300 text-xs uppercase tracking-widest font-bold">
+              {pendingSelfRegroup.cardName}
+            </div>
+            <p className="text-slate-300 text-sm mt-2 mb-4">
+              Comienzo de tu Fase Final. ¿Agrupar a {pendingSelfRegroup.cardName} a tu Línea de Defensa?
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="primary"
+                fullWidth
+                onClick={() => resolveSelfRegroup(true, pendingSelfRegroup.playerId)}
+              >
+                Sí, agrupar
+              </Button>
+              <Button
+                variant="secondary"
+                fullWidth
+                onClick={() => resolveSelfRegroup(false, pendingSelfRegroup.playerId)}
               >
                 No
               </Button>

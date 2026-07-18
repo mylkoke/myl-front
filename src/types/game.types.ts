@@ -212,6 +212,18 @@ export interface GameState {
     toZone: import('./ability.types').AbilityZone;
     millCount: number;
   } | null;
+  /**
+   * Decisión declarativa 'fase_final' + 'recuperar_self' (Paula Jaraquemada): al
+   * comienzo de su Fase Final, su dueño puede agrupar la carta (moverla desde la
+   * Línea de Ataque a `toZone`, típicamente la Defensa, enderezada). Se
+   * sincroniza online.
+   */
+  pendingSelfRegroup: {
+    playerId: PlayerId;
+    cardInstanceId: string;
+    cardName: string;
+    toZone: import('./ability.types').AbilityZone;
+  } | null;
   responseWindow: {
     /** Carta recién jugada (ya en su zona) que puede ser anulada */
     cardInstanceId: string;

@@ -4,7 +4,12 @@ import type { GameState, PlayerState, TurnPhase, PlayerId } from '@/types/game.t
 import type { CardInPlay, Card, CardType } from '@/types/card.types';
 import { createCardInPlay, createCardsInPlay } from '@/utils/cardFactory';
 import { shuffleDeck, drawCards } from '@/utils/deckUtils';
-import { getAbilityDefinition, auraEnablesPlayFromZone, getAnnulRecover } from '@/utils/abilityRegistry';
+import {
+  getAbilityDefinition,
+  auraEnablesPlayFromZone,
+  getAnnulRecover,
+  getFaseFinalSelfMove,
+} from '@/utils/abilityRegistry';
 import {
   runAbilityDefinition,
   definitionTriggersAt,
@@ -376,6 +381,7 @@ export function buildInitialState(
     pendingSelfSummon: null,
     pendingFinalDraw: null,
     pendingAnnulRecover: null,
+    pendingSelfRegroup: null,
     responseWindow: null,
     fxLightning: null,
     gameLog: [
@@ -624,6 +630,12 @@ interface GameActions {
    * Removidas a su zona destino (o dejarla removida si se rechaza).
    */
   resolveAnnulRecover: (accept: boolean, playerId: PlayerId) => void;
+  /**
+   * 'fase_final' + 'recuperar_self' (Paula Jaraquemada): resuelve la decisión de
+   * agrupar la carta (Línea de Ataque → destino enderezada) al comienzo de la
+   * Fase Final (o dejarla donde está si se rechaza).
+   */
+  resolveSelfRegroup: (accept: boolean, playerId: PlayerId) => void;
   /** Replace the whole game state (online sync). */
   hydrateState: (state: GameState) => void;
   addLog: (msg: string, type?: GameLogEntry['type']) => void;
@@ -1501,6 +1513,23 @@ export const useGameStore = create<GameStore>()(
           if ([...active.defenseField, ...active.attackField].some(hasFinalDraw2)) {
             const src = [...active.defenseField, ...active.attackField].find(hasFinalDraw2)!;
             set({ pendingFinalDraw: { playerId: turn.currentPlayer, sourceName: src.nombre } });
+          }
+
+          // Declarativa 'fase_final' + 'recuperar_self' (Paula Jaraquemada): si
+          // el jugador de turno tiene en su Línea de Ataque una carta que puede
+          // agruparse a sí misma, decide en un modal (solo tiene sentido desde
+          // ataque; si ya está en defensa, no hay nada que agrupar).
+          const regroupCard = active.attackField.find((c) => getFaseFinalSelfMove(c));
+          if (regroupCard) {
+            const move = getFaseFinalSelfMove(regroupCard)!;
+            set({
+              pendingSelfRegroup: {
+                playerId: turn.currentPlayer,
+                cardInstanceId: regroupCard.instanceId,
+                cardName: regroupCard.nombre,
+                toZone: move.toZone,
+              },
+            });
           }
         }
 
@@ -2725,6 +2754,44 @@ export const useGameStore = create<GameStore>()(
           `${player.name} bota ${millCount} carta(s) del Castillo y recupera a ${cardName} a su ${ZONE_LABELS_STORE[toZone]}.`,
           'action',
         );
+      },
+
+      resolveSelfRegroup: (accept, playerId) => {
+        const { pendingSelfRegroup, players } = get();
+        if (!pendingSelfRegroup || pendingSelfRegroup.playerId !== playerId) return;
+        const { cardInstanceId, cardName, toZone } = pendingSelfRegroup;
+        const player = players[playerId];
+        if (!accept) {
+          set({ pendingSelfRegroup: null });
+          get().addLog(`${player.name} no agrupa a ${cardName}.`, 'system');
+          return;
+        }
+        const toKey = ZONE_TO_STATE_KEY[toZone];
+        set((s) => {
+          const p = s.players[playerId];
+          const card =
+            p.attackField.find((c) => c.instanceId === cardInstanceId) ??
+            p.defenseField.find((c) => c.instanceId === cardInstanceId) ??
+            p.supportField.find((c) => c.instanceId === cardInstanceId);
+          if (!card) return { pendingSelfRegroup: null };
+          // Enderezada siempre (las cartas nunca se voltean).
+          const straightened = { ...card, tapped: false, attackedThisTurn: false };
+          const destArr = (p[toKey] as CardInPlay[]).filter((c) => c.instanceId !== cardInstanceId);
+          return {
+            pendingSelfRegroup: null,
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...p,
+                attackField: p.attackField.filter((c) => c.instanceId !== cardInstanceId),
+                defenseField: p.defenseField.filter((c) => c.instanceId !== cardInstanceId),
+                supportField: p.supportField.filter((c) => c.instanceId !== cardInstanceId),
+                [toKey]: [...destArr, straightened],
+              },
+            },
+          };
+        });
+        get().addLog(`${player.name} agrupa a ${cardName} a su ${ZONE_LABELS_STORE[toZone]}.`, 'action');
       },
 
       resolveTypeChoice: (tipo, playerId) => {

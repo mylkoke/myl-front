@@ -78,6 +78,12 @@ export function CreateAbilityPage() {
   const [costGold, setCostGold] = useState(0);
   // Condición: botar N cartas del propio Castillo al Cementerio (solo activable).
   const [costMill, setCostMill] = useState(0);
+  // Efecto 'buff_fuerza' (aura): bono de Fuerza dinámico por conteo de aliados.
+  const [buffTargetRaza, setBuffTargetRaza] = useState('');
+  const [buffCountRaza, setBuffCountRaza] = useState('');
+  const [buffAmount, setBuffAmount] = useState(1);
+  const [buffScope, setBuffScope] = useState<'owner' | 'both'>('both');
+  const [buffExcludeSelf, setBuffExcludeSelf] = useState(true);
 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
@@ -99,10 +105,13 @@ export function CreateAbilityPage() {
   // destino (el origen es "donde esté la propia carta").
   const isEnablePlay = effectKind === 'habilitar_juego';
   const isRecoverSelf = effectKind === 'recuperar_self';
+  const isBuffForce = effectKind === 'buff_fuerza';
   const usesTargetFilters = effectKind === 'invocar' || isEnablePlay;
-  const needsFrom = !isRecoverSelf;
-  const needsTo = !isEnablePlay;
-  const zonesOk = isRecoverSelf
+  const needsFrom = !isRecoverSelf && !isBuffForce;
+  const needsTo = !isEnablePlay && !isBuffForce;
+  const zonesOk = isBuffForce
+    ? true
+    : isRecoverSelf
     ? to !== null
     : isEnablePlay
     ? from !== null
@@ -125,6 +134,19 @@ export function CreateAbilityPage() {
     };
     if (effectKind === 'recuperar_self') {
       return { ...base, effect: { kind: 'recuperar_self', to: to as AbilityZone } };
+    }
+    if (effectKind === 'buff_fuerza') {
+      return {
+        ...base,
+        effect: {
+          kind: 'buff_fuerza',
+          targetRaza: buffTargetRaza.trim() || null,
+          countRaza: buffCountRaza.trim() || null,
+          amount: buffAmount,
+          scope: buffScope,
+          excludeSelf: buffExcludeSelf,
+        },
+      };
     }
     if (effectKind === 'invocar') {
       return {
@@ -199,6 +221,11 @@ export function CreateAbilityPage() {
       setMinCoste(1);
       setCostGold(0);
       setCostMill(0);
+      setBuffTargetRaza('');
+      setBuffCountRaza('');
+      setBuffAmount(1);
+      setBuffScope('both');
+      setBuffExcludeSelf(true);
     } catch (err) {
       const text =
         err instanceof ApiError
@@ -228,6 +255,13 @@ export function CreateAbilityPage() {
     const costText = costParts.length ? ` pagando ${costParts.join(' y ')},` : '';
     if (isRecoverSelf && to !== null) {
       return `${when}:${costText} ${modeText} devolver esta misma carta a ${ZONE_LABELS[to]}.`;
+    }
+    if (isBuffForce) {
+      const receptores = buffTargetRaza.trim() ? `Aliados ${buffTargetRaza.trim()}` : 'tus Aliados';
+      const contados = buffCountRaza.trim() ? `Aliado ${buffCountRaza.trim()}` : 'Aliado';
+      const ambito = buffScope === 'both' ? 'en juego (ambos jugadores)' : 'que controles';
+      const otro = buffExcludeSelf ? 'otro ' : '';
+      return `${when}: ${receptores} que controles ganan ${buffAmount} de Fuerza por cada ${otro}${contados} ${ambito}.`;
     }
     if (isEnablePlay) {
       const filtro = [
@@ -259,7 +293,8 @@ export function CreateAbilityPage() {
   }, [
     moments, mode, effectKind, from, to, countMode, countValue, countSource,
     effectiveBarajar, costGold, costMill, summonRaza, summonTipo, summonMaxCoste,
-    isEnablePlay, isRecoverSelf, needsFrom, needsTo, costReduce, minCoste,
+    isEnablePlay, isRecoverSelf, isBuffForce, needsFrom, needsTo, costReduce, minCoste,
+    buffTargetRaza, buffCountRaza, buffAmount, buffScope, buffExcludeSelf,
   ]);
 
   return (
@@ -390,9 +425,79 @@ export function CreateAbilityPage() {
             {isRecoverSelf && (
               <p className="text-[11px] text-slate-400">
                 Devuelve LA PROPIA carta (la que lleva esta habilidad) a la zona destino,
-                venga de donde venga. Úsalo con el momento "Al ser anulada" y un coste de
-                botado para recuperarla desde Removidas.
+                venga de donde venga. Úsalo con el momento "Al ser anulada" (y un coste de
+                botado) para recuperarla desde Removidas, o con "Al comienzo de tu Fase
+                Final" y destino Línea de Defensa para agruparla (modal Sí/No).
               </p>
+            )}
+
+            {isBuffForce && (
+              <>
+                <p className="text-[11px] text-slate-400">
+                  Aura estática (usa el momento "Mientras esté en juego"): bonifica la Fuerza
+                  de tus Aliados de una raza por cada Aliado contado en juego. Dinámico.
+                </p>
+                <div className="flex gap-4">
+                  <div>
+                    <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1">
+                      Raza que recibe (vacío = todos)
+                    </label>
+                    <input
+                      value={buffTargetRaza}
+                      onChange={(e) => setBuffTargetRaza(e.target.value)}
+                      placeholder="Ej. Caudillo"
+                      className={`${inputCls} w-44`}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1">
+                      +Fuerza por cada uno
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={buffAmount === 0 ? '' : String(buffAmount)}
+                      placeholder="1"
+                      onChange={(e) => setBuffAmount(Number(e.target.value.replace(/\D/g, '')) || 0)}
+                      className={`${inputCls} w-24`}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1">
+                    Raza que se cuenta (vacío = cualquier Aliado)
+                  </label>
+                  <input
+                    value={buffCountRaza}
+                    onChange={(e) => setBuffCountRaza(e.target.value)}
+                    placeholder="Ej. Caudillo"
+                    className={`${inputCls} w-44`}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1.5">
+                    ¿Qué Aliados se cuentan?
+                  </label>
+                  <LabelPicker
+                    tone="emerald"
+                    value={buffScope}
+                    onChange={setBuffScope}
+                    options={[
+                      { value: 'both', label: 'De ambos jugadores' },
+                      { value: 'owner', label: 'Solo los que controles' },
+                    ]}
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-xs text-slate-300 select-none rounded-md px-3 py-2 border border-slate-700 bg-slate-800/60 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={buffExcludeSelf}
+                    onChange={(e) => setBuffExcludeSelf(e.target.checked)}
+                  />
+                  No contar al propio Aliado que recibe el bono ("por cada OTRO")
+                </label>
+              </>
             )}
             {/* Origen: mover / invocar / habilitar_juego (no recuperar_self) */}
             {needsFrom && (
