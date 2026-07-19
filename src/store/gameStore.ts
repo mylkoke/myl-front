@@ -45,6 +45,7 @@ import {
   RESPONSE_WINDOW_MS,
   hasDrawDiscardGold,
   cannotLeavePlay,
+  hasCombatOnlyExit,
   canPlayFromZone,
   hasCombatExileAll,
   hasBlockWeakenAll,
@@ -1230,8 +1231,14 @@ export const useGameStore = create<GameStore>()(
           const card = inAttack ?? inDefense;
           if (!card) return owner;
           // 'indestructible' (propio u otorgado) sobrevive a la destrucción;
-          // 'no_sale_del_juego' no puede abandonar el campo por ningún medio.
-          if (isIndestructibleEffective(card, owner) || cannotLeavePlay(card)) return owner;
+          // 'no_sale_del_juego' no puede abandonar el campo por ningún medio;
+          // 'solo_sale_combate' sobrevive a la comparación de fuerzas en combate.
+          if (
+            isIndestructibleEffective(card, owner) ||
+            cannotLeavePlay(card) ||
+            hasCombatOnlyExit(card)
+          )
+            return owner;
           const weapons = weaponsOf(owner, instanceId);
           const restWeapons = { ...owner.equippedWeapons };
           delete restWeapons[instanceId];
@@ -2310,7 +2317,11 @@ export const useGameStore = create<GameStore>()(
           get().addLog(`${target.nombre} es inmune a las habilidades de Aliados.`, 'error');
           return;
         }
-        if (isIndestructibleEffective(target, targetOwner) || cannotLeavePlay(target)) {
+        if (
+          isIndestructibleEffective(target, targetOwner) ||
+          cannotLeavePlay(target) ||
+          hasCombatOnlyExit(target)
+        ) {
           get().addLog(`${target.nombre} no puede ser destruido.`, 'error');
           return;
         }
@@ -2382,7 +2393,11 @@ export const useGameStore = create<GameStore>()(
           get().addLog(`${target.nombre} es inmune a las habilidades de Aliados.`, 'error');
           return;
         }
-        if (isIndestructibleEffective(target, targetOwner) || cannotLeavePlay(target)) {
+        if (
+          isIndestructibleEffective(target, targetOwner) ||
+          cannotLeavePlay(target) ||
+          hasCombatOnlyExit(target)
+        ) {
           get().addLog(`${target.nombre} no puede ser destruido.`, 'error');
           return;
         }

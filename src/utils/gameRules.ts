@@ -426,6 +426,18 @@ export function cannotLeavePlay(card: Card): boolean {
   return card.habilidadesEspeciales?.includes('no_sale_del_juego') ?? false;
 }
 
+/**
+ * 'solo_sale_combate' (Ambrosio O'Higgins): la carta solo puede salir del juego
+ * por Daño de Combate. Sobrevive a la comparación de fuerzas en combate (tanto
+ * atacando como bloqueando, sin importar la fuerza rival) y a la destrucción por
+ * efectos ("Destruye"). Solo la saca el destierro/daño disparado por daño de
+ * combate (p.ej. Sable de Caballería). Guard consultado en las destrucciones de
+ * combate y de efecto (NO en el destierro por daño de combate).
+ */
+export function hasCombatOnlyExit(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('solo_sale_combate') ?? false;
+}
+
 /** Cards drawn by 'barajar_mano_roba8' when the shuffle option is accepted. */
 export const SHUFFLE_DRAW_COUNT = 8;
 
