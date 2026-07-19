@@ -10,6 +10,7 @@ import { AdminPage } from '@/pages/AdminPage';
 import { RequireAuth, RequireRole } from '@/components/RequireAuth';
 import { useAuthStore } from '@/store/authStore';
 import { PortraitGate } from '@/components/PortraitGate';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 function App() {
   const bootstrap = useAuthStore((s) => s.bootstrap);
@@ -19,9 +20,10 @@ function App() {
   }, [bootstrap]);
 
   return (
-    <BrowserRouter>
-      <PortraitGate />
-      <Routes>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <PortraitGate />
+        <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/" element={<RequireAuth><LobbyPage /></RequireAuth>} />
         <Route path="/game" element={<RequireAuth><GamePage /></RequireAuth>} />
@@ -48,8 +50,9 @@ function App() {
           element={<RequireRole roles={['admin']}><AdminPage /></RequireRole>}
         />
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+        </Routes>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
 
