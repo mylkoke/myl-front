@@ -52,6 +52,7 @@ export function GameBoard() {
   const weakenTargeting = useTargetingStore((s) => s.weaken);
   const destroyTargeting = useTargetingStore((s) => s.destroy);
   const destroyAnyTargeting = useTargetingStore((s) => s.destroyAny);
+  const exileAnyTargeting = useTargetingStore((s) => s.exileAny);
   const cancelTargeting = useTargetingStore((s) => s.cancel);
   const pendingDiscard = useGameStore((s) => s.pendingDiscard);
   const pendingHandDiscard = useGameStore((s) => s.pendingHandDiscard);
@@ -990,15 +991,21 @@ export function GameBoard() {
         </div>
       )}
 
-      {/* ── Targeting banner: eligiendo objetivo (debilitar / destruir) ── */}
-      {(weakenTargeting || destroyTargeting || destroyAnyTargeting) && (
-        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 border border-red-500/50 rounded-full px-4 py-2 flex items-center gap-3 shadow-xl">
-          <span className="text-xs text-red-300 font-bold">
+      {/* ── Targeting banner: eligiendo objetivo (debilitar / destruir / desterrar) ── */}
+      {(weakenTargeting || destroyTargeting || destroyAnyTargeting || exileAnyTargeting) && (
+        <div
+          className={`absolute top-14 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 border rounded-full px-4 py-2 flex items-center gap-3 shadow-xl ${
+            exileAnyTargeting ? 'border-purple-500/50' : 'border-red-500/50'
+          }`}
+        >
+          <span className={`text-xs font-bold ${exileAnyTargeting ? 'text-purple-300' : 'text-red-300'}`}>
             {weakenTargeting
               ? 'Elige un aliado: tendrá Fuerza 0 hasta la Fase Final'
               : destroyTargeting
               ? 'Elige un aliado: será destruido (botas 3 cartas de tu Castillo)'
-              : 'Elige una carta en juego (no Oro): será destruida'}
+              : destroyAnyTargeting
+              ? 'Elige una carta en juego (no Oro): será destruida'
+              : 'Elige una carta en juego: pagas 2 Oros y será desterrada'}
           </span>
           <button
             onClick={cancelTargeting}

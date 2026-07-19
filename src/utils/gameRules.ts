@@ -534,6 +534,19 @@ export function hasCombatExileAll(card: Card): boolean {
   return card.habilidadesEspeciales?.includes('destierro_combate') ?? false;
 }
 
+/** Coste en Oros del destierro opcional de 'destierro_combate_pago' (Lord Cochrane). */
+export const COMBAT_EXILE_PAY_COST = 2;
+
+/**
+ * 'destierro_combate_pago' (Lord Cochrane): cada vez que ESTE aliado hace daño
+ * de combate a un Mazo Castillo, su dueño PUEDE pagar 2 Oros para desterrar una
+ * carta en juego (cualquiera de ambos jugadores; respeta 'indesterrable' y
+ * 'no_sale_del_juego'). Opcional: solo se ofrece si el dueño tiene ≥2 Oros.
+ */
+export function hasCombatExilePay(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('destierro_combate_pago') ?? false;
+}
+
 /**
  * 'bonus_patriotas' (Bernardo O'Higgins): while this card is on the board
  * (defense or attack line), ALL Patriota allies — both players', including

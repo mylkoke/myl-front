@@ -17,15 +17,18 @@ interface TargetingState {
   equip: { weaponInstanceId: string; zone: 'graveyard' | 'exile'; playerId: PlayerId } | null;
   /** Active "destroy any non-gold card" targeting ('destruye_no_oro'): any card in a line. */
   destroyAny: { sourceInstanceId: string; playerId: PlayerId } | null;
+  /** Active "exile any card" targeting ('destierro_combate_pago', Lord Cochrane): any card in a line. */
+  exileAny: { sourceInstanceId: string; playerId: PlayerId } | null;
   startWeaken: (sourceInstanceId: string, playerId: PlayerId) => void;
   startDestroy: (sourceInstanceId: string, playerId: PlayerId) => void;
   startSwap: (sourceInstanceId: string, playerId: PlayerId) => void;
   startEquip: (weaponInstanceId: string, zone: 'graveyard' | 'exile', playerId: PlayerId) => void;
   startDestroyAny: (sourceInstanceId: string, playerId: PlayerId) => void;
+  startExileAny: (sourceInstanceId: string, playerId: PlayerId) => void;
   cancel: () => void;
 }
 
-const NONE = { weaken: null, destroy: null, swap: null, equip: null, destroyAny: null };
+const NONE = { weaken: null, destroy: null, swap: null, equip: null, destroyAny: null, exileAny: null };
 
 export const useTargetingStore = create<TargetingState>((set) => ({
   ...NONE,
@@ -39,5 +42,7 @@ export const useTargetingStore = create<TargetingState>((set) => ({
     set({ ...NONE, equip: { weaponInstanceId, zone, playerId } }),
   startDestroyAny: (sourceInstanceId, playerId) =>
     set({ ...NONE, destroyAny: { sourceInstanceId, playerId } }),
+  startExileAny: (sourceInstanceId, playerId) =>
+    set({ ...NONE, exileAny: { sourceInstanceId, playerId } }),
   cancel: () => set({ ...NONE }),
 }));

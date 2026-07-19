@@ -4,6 +4,7 @@ import type { GameState, PlayerState, TurnPhase, PlayerId } from '@/types/game.t
 import type { CardInPlay, Card, CardType } from '@/types/card.types';
 import { createCardInPlay, createCardsInPlay } from '@/utils/cardFactory';
 import { shuffleDeck, drawCards } from '@/utils/deckUtils';
+import { useTargetingStore } from '@/store/targetingStore';
 import {
   getAbilityDefinition,
   auraEnablesPlayFromZone,
@@ -48,6 +49,8 @@ import {
   hasCombatOnlyExit,
   canPlayFromZone,
   hasCombatExileAll,
+  hasCombatExilePay,
+  COMBAT_EXILE_PAY_COST,
   hasBlockWeakenAll,
   hasControlSwap,
   hasCopySearchOnEnter,
@@ -524,6 +527,16 @@ interface GameActions {
    * en juego (aliado, tótem o maquinaria) que no sea Oro.
    */
   destroyNonGoldCard: (
+    sourceInstanceId: string,
+    targetInstanceId: string,
+    targetOwnerId: PlayerId,
+    playerId: PlayerId,
+  ) => void;
+  /**
+   * 'destierro_combate_pago' (Lord Cochrane): paga 2 Oros y destierra la carta
+   * en juego objetivo (cualquier jugador; respeta 'indesterrable'/'no_sale_del_juego').
+   */
+  exileTargetCard: (
     sourceInstanceId: string,
     targetInstanceId: string,
     targetOwnerId: PlayerId,
@@ -1349,6 +1362,23 @@ export const useGameStore = create<GameStore>()(
 
         const { isOver, winnerId } = checkGameOver(get().players);
         if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
+
+        // 'destierro_combate_pago' (Lord Cochrane): si el atacante hizo daño de
+        // combate al Castillo y su dueño tiene ≥2 Oros, se le ofrece pagar 2 Oros
+        // para desterrar una carta en juego (targeting local; el pago va en
+        // exileTargetCard). Opcional: se cancela desde el banner.
+        if (
+          !get().isGameOver &&
+          outcome.deckDamage > 0 &&
+          hasCombatExilePay(attacker) &&
+          get().players[combat.attackerId].goldCount >= COMBAT_EXILE_PAY_COST
+        ) {
+          useTargetingStore.getState().startExileAny(attacker.instanceId, combat.attackerId);
+          get().addLog(
+            `${attacker.nombre}: puedes pagar ${COMBAT_EXILE_PAY_COST} Oros para desterrar una carta en juego (o cancela).`,
+            'action',
+          );
+        }
       },
 
       // ── Tap / untap ───────────────────────────────────────────────────────
@@ -2453,6 +2483,71 @@ export const useGameStore = create<GameStore>()(
         if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
       },
 
+      exileTargetCard: (sourceInstanceId, targetInstanceId, targetOwnerId, playerId) => {
+        void sourceInstanceId;
+        const { players, isGameOver } = get();
+        if (isGameOver) return;
+        const targeting = useTargetingStore.getState().exileAny;
+        if (!targeting || targeting.playerId !== playerId) return;
+        const player = players[playerId];
+        if (player.goldCount < COMBAT_EXILE_PAY_COST) {
+          get().addLog(`Necesitas ${COMBAT_EXILE_PAY_COST} Oros para desterrar.`, 'error');
+          return;
+        }
+        const targetOwner = players[targetOwnerId];
+        const target = [
+          ...targetOwner.defenseField,
+          ...targetOwner.attackField,
+          ...targetOwner.supportField,
+        ].find((c) => c.instanceId === targetInstanceId && c.tipo !== 'oro');
+        if (!target) return;
+        // El destierro respeta 'indesterrable' y 'no_sale_del_juego' (Indestructible NO protege del destierro).
+        if (hasIndesterrable(target) || cannotLeavePlay(target)) {
+          get().addLog(`${target.nombre} no puede ser desterrada.`, 'error');
+          return;
+        }
+        const paid = player.gold.slice(player.gold.length - COMBAT_EXILE_PAY_COST);
+        const remainingGold = player.gold.slice(0, player.gold.length - COMBAT_EXILE_PAY_COST);
+        set((s) => {
+          const o = s.players[targetOwnerId];
+          const weapons = weaponsOf(o, targetInstanceId);
+          const restWeapons = { ...o.equippedWeapons };
+          delete restWeapons[targetInstanceId];
+          const ownerPatch = {
+            defenseField: o.defenseField.filter((c) => c.instanceId !== targetInstanceId),
+            attackField: o.attackField.filter((c) => c.instanceId !== targetInstanceId),
+            supportField: o.supportField.filter((c) => c.instanceId !== targetInstanceId),
+            exile: [...o.exile, target],
+            // Las armas equipadas de la carta desterrada van al cementerio.
+            graveyard: [...o.graveyard, ...weapons],
+            equippedWeapons: restWeapons,
+          };
+          const payerPatch = {
+            gold: remainingGold,
+            goldPaid: [...s.players[playerId].goldPaid, ...paid],
+            goldCount: remainingGold.length,
+            goldSpentThisTurn: true,
+          };
+          const same = playerId === targetOwnerId;
+          return {
+            players: same
+              ? { ...s.players, [playerId]: { ...o, ...ownerPatch, ...payerPatch } }
+              : {
+                  ...s.players,
+                  [targetOwnerId]: { ...o, ...ownerPatch },
+                  [playerId]: { ...s.players[playerId], ...payerPatch },
+                },
+          };
+        });
+        useTargetingStore.getState().cancel();
+        get().addLog(
+          `${player.name} paga ${COMBAT_EXILE_PAY_COST} Oros y destierra a ${target.nombre}.`,
+          'combat',
+        );
+        const { isOver, winnerId } = checkGameOver(get().players);
+        if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
+      },
+
       resolvePatriotaTrigger: (accept, playerId) => {
         const { pendingPatriotaTrigger, players } = get();
         if (!pendingPatriotaTrigger || pendingPatriotaTrigger.playerId !== playerId) return;
@@ -3108,6 +3203,12 @@ export const useGameStore = create<GameStore>()(
             'action'
           );
         }
+
+        // Declarativas AUTOMÁTICAS 'al_ser_anulado' (obligatoria/automatica) de la
+        // carta anulada, ejecutadas desde su controlador (p.ej. Lord Cochrane:
+        // "si es anulada, agrupa 5 Oros"). Las activables (recuperar_self) las
+        // maneja el modal `pendingAnnulRecover` aparte.
+        runDeclarativeAbilities(target, responseWindow.cardOwnerId, 'al_ser_anulado');
 
         // 'al_ser_anulado' + 'recuperar_self' (Juan Mackenna): al ser anulada,
         // su dueño DECIDE botar N del Castillo para devolverla de Removidas a su

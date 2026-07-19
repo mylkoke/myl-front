@@ -50,7 +50,7 @@ export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = '
   const [deckSearchOpen, setDeckSearchOpen] = useState(false);
   const { equipWeapon, summonCaudilloFromDeck, weakenAlly, millDestroyAlly, swapControl,
     playRecycledTalisman, activateMillGold, chooseRaceSuppress, equipWeaponFromZone,
-    destroyNonGoldCard, activateDeclarativeAbility, summonDeclarativeFromZone } = useGameActions();
+    destroyNonGoldCard, exileTargetCard, activateDeclarativeAbility, summonDeclarativeFromZone } = useGameActions();
   const [recycleOpen, setRecycleOpen] = useState(false);
   const [razaPickerOpen, setRazaPickerOpen] = useState(false);
   // Habilidad declarativa 'invocar' con selección en curso (o null).
@@ -83,9 +83,11 @@ export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = '
       : null;
   // 'destruye_no_oro' (Héroes de Chile): cualquier aliado en juego es objetivo.
   const destroyAnyTargeting = useTargetingStore((s) => s.destroyAny);
+  // 'destierro_combate_pago' (Lord Cochrane): cualquier aliado en juego es objetivo.
+  const exileAnyTargeting = useTargetingStore((s) => s.exileAny);
   const cancelTargeting = useTargetingStore((s) => s.cancel);
   const anyTargeting =
-    weakenTargeting ?? destroyTargeting ?? swapTargeting ?? equipTargeting ?? destroyAnyTargeting;
+    weakenTargeting ?? destroyTargeting ?? swapTargeting ?? equipTargeting ?? destroyAnyTargeting ?? exileAnyTargeting;
 
   const isMyTurn = turn.currentPlayer === playerId && !isOpponent;
 
@@ -272,7 +274,11 @@ export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = '
           {anyTargeting && (
             <div
               className={`absolute -inset-1 rounded-xl ring-2 animate-pulse pointer-events-none z-30 ${
-                swapTargeting || equipTargeting ? 'ring-yellow-400' : 'ring-red-400'
+                swapTargeting || equipTargeting
+                  ? 'ring-yellow-400'
+                  : exileAnyTargeting
+                  ? 'ring-purple-400'
+                  : 'ring-red-400'
               }`}
             />
           )}
@@ -329,6 +335,14 @@ export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = '
                     );
                     cancelTargeting();
                   }
+                : exileAnyTargeting
+                ? () =>
+                    exileTargetCard(
+                      exileAnyTargeting.sourceInstanceId,
+                      ally.instanceId,
+                      playerId,
+                      exileAnyTargeting.playerId,
+                    )
                 : () => setDetailCard(ally)
             }
             dragPayload={

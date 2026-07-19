@@ -81,8 +81,10 @@ export function ThreeLineField({ playerId, isOpponent = false }: ThreeLineFieldP
     swapTargetingRaw && swapTargetingRaw.playerId !== playerId ? swapTargetingRaw : null;
   // 'destruye_no_oro' (Héroes de Chile): cualquier carta en juego es objetivo.
   const destroyAnyTargeting = useTargetingStore((s) => s.destroyAny);
+  // 'destierro_combate_pago' (Lord Cochrane): cualquier carta en juego es objetivo.
+  const exileAnyTargeting = useTargetingStore((s) => s.exileAny);
   const cancelTargeting = useTargetingStore((s) => s.cancel);
-  const { swapControl, destroyNonGoldCard } = useGameActions();
+  const { swapControl, destroyNonGoldCard, exileTargetCard } = useGameActions();
 
   const swapWrap = (card: CardInPlay, node: React.ReactNode) => {
     if (swapTargeting) {
@@ -109,6 +111,19 @@ export function ThreeLineField({ playerId, isOpponent = false }: ThreeLineFieldP
           }}
         >
           <div className="absolute -inset-1 rounded-xl ring-2 ring-red-400 animate-pulse pointer-events-none z-30" />
+          <div className="pointer-events-none">{node}</div>
+        </div>
+      );
+    }
+    if (exileAnyTargeting) {
+      return (
+        <div
+          className="relative cursor-pointer"
+          onClick={() =>
+            exileTargetCard(exileAnyTargeting.sourceInstanceId, card.instanceId, playerId, exileAnyTargeting.playerId)
+          }
+        >
+          <div className="absolute -inset-1 rounded-xl ring-2 ring-purple-400 animate-pulse pointer-events-none z-30" />
           <div className="pointer-events-none">{node}</div>
         </div>
       );
