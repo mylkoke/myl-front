@@ -80,18 +80,26 @@ export function toBaseCard(c: CardInPlay | Card): Card {
 }
 
 /**
- * Aplica un efecto "mover" al estado del propietario. Toma `count` cartas del
- * frente de la zona origen y las agrega a la zona destino, convirtiéndolas al
- * tipo adecuado (Card en el Mazo Castillo, CardInPlay en el resto). Si la receta
- * pide barajar (o el Mazo Castillo participa), re-aleatoriza el mazo propio.
+ * Aplica un efecto "mover". El jugador AFECTADO es el controlador o su oponente
+ * (`effect.target`); la cantidad dinámica se cuenta siempre sobre el controlador
+ * (p.ej. "un oponente bota tantas como Aliados controles"). Toma `count` cartas
+ * del frente (tope) de la zona origen y las agrega al destino. Solo baraja el
+ * Mazo Castillo si `barajar` es explícito (botar del tope NO baraja).
  */
-function applyMove(owner: PlayerState, effect: MoveEffect): { owner: PlayerState; log: string } | null {
+function applyMove(
+  controller: PlayerState,
+  opponent: PlayerState,
+  effect: MoveEffect,
+): { controller: PlayerState; opponent: PlayerState; log: string } | null {
+  const targetsOpp = effect.target === 'opponent';
+  const actor = targetsOpp ? opponent : controller;
   const fromKey = ZONE_KEY[effect.from];
   const toKey = ZONE_KEY[effect.to];
-  const fromArr = owner[fromKey] as (Card | CardInPlay)[];
+  const fromArr = actor[fromKey] as (Card | CardInPlay)[];
   if (!Array.isArray(fromArr) || fromArr.length === 0) return null;
 
-  const n = Math.min(resolveCount(effect.count, owner), fromArr.length);
+  // La cantidad (fija o dinámica) se resuelve SIEMPRE sobre el controlador.
+  const n = Math.min(resolveCount(effect.count, controller), fromArr.length);
   if (n <= 0) return null;
 
   const moving = fromArr.slice(0, n);
@@ -102,33 +110,35 @@ function applyMove(owner: PlayerState, effect: MoveEffect): { owner: PlayerState
     ? moving.map(toBaseCard)
     : moving.map((c) => ('instanceId' in c ? (c as CardInPlay) : createCardInPlay(c as Card)));
 
-  const next: PlayerState = { ...owner };
+  const next: PlayerState = { ...actor };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (next as any)[fromKey] = remainingFrom;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (next as any)[toKey] = [...(owner[toKey] as (Card | CardInPlay)[]), ...converted];
+  (next as any)[toKey] = [...(actor[toKey] as (Card | CardInPlay)[]), ...converted];
 
-  // Barajar el Mazo Castillo del propietario si corresponde.
-  if (effect.barajar || effect.from === 'deck' || effect.to === 'deck') {
-    next.deck = shuffleDeck(next.deck);
-  }
+  // Barajar solo si la receta lo pide explícitamente.
+  if (effect.barajar) next.deck = shuffleDeck(next.deck);
 
-  // Espejos de estado dependientes del tamaño de zona.
+  // Espejos de estado dependientes del tamaño de zona (vida = Mazo Castillo).
   next.life = next.deck.length;
   next.goldCount = next.gold.length;
 
-  const log = `Mueve ${n} carta(s) de ${ZONE_LABELS[effect.from]} a ${ZONE_LABELS[effect.to]}${
-    effect.barajar || effect.from === 'deck' || effect.to === 'deck' ? ' y baraja el Mazo Castillo' : ''
+  const quien = targetsOpp ? 'un oponente' : 'el jugador';
+  const log = `${quien} mueve ${n} carta(s) de ${ZONE_LABELS[effect.from]} a ${ZONE_LABELS[effect.to]}${
+    effect.barajar ? ' y baraja el Mazo Castillo' : ''
   }.`;
-  return { owner: next, log };
+  return targetsOpp
+    ? { controller, opponent: next, log }
+    : { controller: next, opponent, log };
 }
 
-/** Ejecuta la receta completa sobre el propietario (solo efecto "mover" por ahora). */
+/** Ejecuta la receta completa (solo efecto "mover" por ahora). */
 export function runAbilityDefinition(
-  owner: PlayerState,
+  controller: PlayerState,
+  opponent: PlayerState,
   def: AbilityDefinition,
-): { owner: PlayerState; log: string } | null {
-  if (def.effect.kind === 'mover') return applyMove(owner, def.effect);
+): { controller: PlayerState; opponent: PlayerState; log: string } | null {
+  if (def.effect.kind === 'mover') return applyMove(controller, opponent, def.effect);
   return null;
 }
 

@@ -41,7 +41,8 @@ export type AbilityMoment =
   | 'fase_final'
   | 'una_vez_turno'
   | 'mientras_en_juego'
-  | 'al_ser_anulado';
+  | 'al_ser_anulado'
+  | 'inicio_turno';
 
 export const MOMENT_LABELS: Record<AbilityMoment, string> = {
   entra_juego: 'Al entrar en juego',
@@ -53,6 +54,7 @@ export const MOMENT_LABELS: Record<AbilityMoment, string> = {
   una_vez_turno: 'Una vez por turno',
   mientras_en_juego: 'Mientras esté en juego (aura continua)',
   al_ser_anulado: 'Al ser anulada',
+  inicio_turno: 'Al comienzo de cada turno',
 };
 
 /**
@@ -100,9 +102,12 @@ export type AbilityCount =
   | { kind: 'dynamic'; source: DynamicCountSource };
 
 /**
- * Efecto "mover": lleva `count` cartas de la zona `from` a la zona `to`. Si
- * `barajar` está activo (o alguna de las zonas es el Mazo Castillo), el Mazo
- * Castillo del propietario se re-aleatoriza al terminar.
+ * Efecto "mover": lleva `count` cartas de la zona `from` a la zona `to`. Con
+ * `target: 'opponent'` el movimiento se aplica sobre las zonas del OPONENTE del
+ * controlador (p.ej. "un oponente bota N del Castillo" = mover deck→graveyard
+ * del rival); la cantidad dinámica ("tantas como Aliados controles") se cuenta
+ * siempre sobre el controlador. Si `barajar` está activo, el Mazo Castillo del
+ * jugador afectado se re-aleatoriza al terminar (botar del tope NO baraja).
  */
 export interface MoveEffect {
   kind: 'mover';
@@ -110,8 +115,10 @@ export interface MoveEffect {
   to: AbilityZone;
   /** ¿Cuántas cartas? (fija o dinámica) */
   count: AbilityCount;
-  /** Barajar el Mazo Castillo del propietario al terminar. */
+  /** Barajar el Mazo Castillo del jugador afectado al terminar. */
   barajar: boolean;
+  /** Sobre quién se aplica el movimiento: el propio controlador o su oponente. */
+  target?: 'self' | 'opponent';
 }
 
 /**

@@ -63,6 +63,8 @@ export function CreateAbilityPage() {
   const [from, setFrom] = useState<AbilityZone | null>(null);
   const [to, setTo] = useState<AbilityZone | null>(null);
   const [barajar, setBarajar] = useState(false);
+  // Sobre quién se aplica el efecto 'mover': el propio jugador o su oponente.
+  const [moveTarget, setMoveTarget] = useState<'self' | 'opponent'>('self');
   // Cantidad: fija o dinámica.
   const [countMode, setCountMode] = useState<'fixed' | 'dynamic'>('fixed');
   const [countValue, setCountValue] = useState(1);
@@ -90,10 +92,9 @@ export function CreateAbilityPage() {
 
   const code = useMemo(() => slugify(nombre), [nombre]);
 
-  // Barajar se auto-implica (y bloquea) cuando el Mazo Castillo es origen o
-  // destino: mover cartas al/desde el mazo re-aleatoriza el orden de robo.
-  const deckInvolved = from === 'deck' || to === 'deck';
-  const effectiveBarajar = deckInvolved || barajar;
+  // Barajar es una opción explícita: botar del tope del Mazo NO baraja; se marca
+  // solo cuando la receta quiere re-aleatorizar (p.ej. devolver cartas al Mazo).
+  const effectiveBarajar = barajar;
 
   const buildCount = (): AbilityCount =>
     countMode === 'dynamic'
@@ -183,6 +184,7 @@ export function CreateAbilityPage() {
         to: to as AbilityZone,
         count: buildCount(),
         barajar: effectiveBarajar,
+        target: moveTarget,
       },
     };
   };
@@ -214,6 +216,7 @@ export function CreateAbilityPage() {
       setBarajar(false);
       setCountMode('fixed');
       setCountValue(1);
+      setMoveTarget('self');
       setSummonRaza('');
       setSummonTipo(null);
       setSummonMaxCoste('');
@@ -288,11 +291,12 @@ export function CreateAbilityPage() {
     }
     const cantidad =
       countMode === 'dynamic' ? DYNAMIC_COUNT_LABELS[countSource].toLowerCase() : `${countValue} carta(s)`;
-    const shuffle = effectiveBarajar ? ' y baraja el Mazo Castillo del propietario' : '';
-    return `${when}:${costText} ${modeText} mover ${cantidad} de ${ZONE_LABELS[from]} a ${ZONE_LABELS[to]}${shuffle}.`;
+    const shuffle = effectiveBarajar ? ' y baraja el Mazo Castillo' : '';
+    const quien = moveTarget === 'opponent' ? 'un oponente mueve' : 'mover';
+    return `${when}:${costText} ${modeText} ${quien} ${cantidad} de ${ZONE_LABELS[from]} a ${ZONE_LABELS[to]}${shuffle}.`;
   }, [
     moments, mode, effectKind, from, to, countMode, countValue, countSource,
-    effectiveBarajar, costGold, costMill, summonRaza, summonTipo, summonMaxCoste,
+    effectiveBarajar, moveTarget, costGold, costMill, summonRaza, summonTipo, summonMaxCoste,
     isEnablePlay, isRecoverSelf, isBuffForce, needsFrom, needsTo, costReduce, minCoste,
     buffTargetRaza, buffCountRaza, buffAmount, buffScope, buffExcludeSelf,
   ]);
@@ -566,24 +570,27 @@ export function CreateAbilityPage() {
                     </div>
                   )}
                 </div>
-                <label
-                  className={[
-                    'flex items-center gap-2 text-xs select-none rounded-md px-3 py-2 border',
-                    deckInvolved
-                      ? 'text-slate-500 bg-slate-800/40 border-slate-800 cursor-not-allowed'
-                      : 'text-slate-300 bg-slate-800/60 border-slate-700 cursor-pointer',
-                  ].join(' ')}
-                >
+                <div>
+                  <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1.5">
+                    ¿Sobre quién se aplica?
+                  </label>
+                  <LabelPicker
+                    tone="purple"
+                    value={moveTarget}
+                    onChange={setMoveTarget}
+                    options={[
+                      { value: 'self', label: 'El propio jugador' },
+                      { value: 'opponent', label: 'Un oponente (p.ej. botar su Castillo)' },
+                    ]}
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-xs text-slate-300 select-none rounded-md px-3 py-2 border border-slate-700 bg-slate-800/60 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={effectiveBarajar}
-                    disabled={deckInvolved}
                     onChange={(e) => setBarajar(e.target.checked)}
                   />
-                  Barajar el Mazo Castillo del propietario al terminar
-                  {deckInvolved && (
-                    <span className="text-[10px] text-slate-500">(implícito: el Mazo Castillo está involucrado)</span>
-                  )}
+                  Barajar el Mazo Castillo del jugador afectado al terminar (botar del tope NO baraja)
                 </label>
               </>
             )}

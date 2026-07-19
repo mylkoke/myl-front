@@ -275,19 +275,27 @@ function maybeRegroup3OnEnter(card: Card, playerId: PlayerId): void {
 function runDeclarativeAbilities(card: Card, playerId: PlayerId, moment: AbilityMoment): void {
   const codes = card.habilidadesEspeciales ?? [];
   if (codes.length === 0) return;
+  const opponentId: PlayerId = playerId === 'player' ? 'opponent' : 'player';
   for (const code of codes) {
     const def = getAbilityDefinition(code);
     if (!def) continue; // imperativa: la maneja su propia lógica
     if (!definitionTriggersAt(def, moment) || !isAutoMode(def.mode)) continue;
     const st = useGameStore.getState();
     if (st.isGameOver) return;
-    const owner = st.players[playerId];
-    const result = runAbilityDefinition(owner, def);
+    const controller = st.players[playerId];
+    const opponent = st.players[opponentId];
+    const result = runAbilityDefinition(controller, opponent, def);
     if (!result) continue;
     useGameStore.setState({
-      players: { ...st.players, [playerId]: result.owner },
+      players: {
+        ...st.players,
+        [playerId]: result.controller,
+        [opponentId]: result.opponent,
+      },
     });
     useGameStore.getState().addLog(`${card.nombre}: ${result.log}`, 'action');
+    const { isOver, winnerId } = checkGameOver(useGameStore.getState().players);
+    if (isOver) useGameStore.setState({ isGameOver: true, winner: winnerId as PlayerId });
   }
 }
 
@@ -1670,6 +1678,22 @@ export const useGameStore = create<GameStore>()(
         // Habilidades declarativas de fase del jugador que recibe el turno
         // (Agrupación o Vigilia, según cómo arranque su turno).
         firePhaseMoment(nextId, nextPhase);
+
+        // Momento global 'inicio_turno': al comenzar CADA turno, las declarativas
+        // 'inicio_turno' de las cartas en juego de AMBOS jugadores se disparan
+        // (cada una desde su controlador; p.ej. Javiera Carrera: el oponente de su
+        // dueño bota 3 del Castillo). fire tras el cambio de turno.
+        for (const pid of ['player', 'opponent'] as PlayerId[]) {
+          const board = get().players[pid];
+          for (const c of [
+            ...board.defenseField,
+            ...board.attackField,
+            ...board.supportField,
+            ...board.gold,
+          ]) {
+            runDeclarativeAbilities(c, pid, 'inicio_turno');
+          }
+        }
       },
 
       initGame: (deckPlayer, deckOpponent) => set(buildInitialState(deckPlayer, deckOpponent)),
@@ -3197,13 +3221,14 @@ export const useGameStore = create<GameStore>()(
           get().addLog(`Necesitas ${cost} oros disponibles para activar esta habilidad.`, 'error');
           return;
         }
-        const result = runAbilityDefinition(player, def);
+        const opponentId: PlayerId = playerId === 'player' ? 'opponent' : 'player';
+        const result = runAbilityDefinition(player, players[opponentId], def);
         if (!result) {
           get().addLog('No hay cartas para mover en la zona de origen.', 'system');
           return;
         }
-        // Aplica el pago sobre el estado resultante (last N oros de la Reserva).
-        let owner = result.owner;
+        // Aplica el pago sobre el controlador (last N oros de la Reserva).
+        let owner = result.controller;
         if (cost > 0) {
           const paid = owner.gold.slice(owner.gold.length - cost);
           const remaining = owner.gold.slice(0, owner.gold.length - cost);
@@ -3222,6 +3247,7 @@ export const useGameStore = create<GameStore>()(
           players: {
             ...s.players,
             [playerId]: { ...owner, allyAbilityUsedThisTurn: usedNext },
+            [opponentId]: result.opponent,
           },
         }));
         const src =
