@@ -26,6 +26,7 @@ export function snapshotGameState(): GameState {
     pendingFinalDraw: s.pendingFinalDraw,
     pendingAnnulRecover: s.pendingAnnulRecover,
     pendingSelfRegroup: s.pendingSelfRegroup,
+    pendingMillChoice: s.pendingMillChoice,
     responseWindow: s.responseWindow,
     fxLightning: s.fxLightning,
   };

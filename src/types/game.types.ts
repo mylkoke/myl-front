@@ -224,6 +224,16 @@ export interface GameState {
     cardName: string;
     toZone: import('./ability.types').AbilityZone;
   } | null;
+  /**
+   * Decisión de 'bota_aliados_elige_jugador' (Abrazo de Maipú): al jugar el
+   * talismán, su dueño elige qué jugador bota `count` cartas del Castillo (tantas
+   * como Aliados en juego de ambos). Se sincroniza online.
+   */
+  pendingMillChoice: {
+    playerId: PlayerId;
+    count: number;
+    sourceName: string;
+  } | null;
   responseWindow: {
     /** Carta recién jugada (ya en su zona) que puede ser anulada */
     cardInstanceId: string;

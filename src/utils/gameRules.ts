@@ -516,11 +516,37 @@ export function hasDesdeCementerio(card: Card): boolean {
   return card.habilidadesEspeciales?.includes('desde_cementerio') ?? false;
 }
 
+/**
+ * 'desde_cementerio_destierro' (Abrazo de Maipú): como 'desde_cementerio' (jugar
+ * desde el Cementerio como si estuviera en la mano), pero al jugarse ASÍ, tras
+ * resolverse se DESTIERRA en vez de volver al Cementerio (evita el reciclado).
+ */
+export function hasPlayFromGraveThenExile(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('desde_cementerio_destierro') ?? false;
+}
+
 /** ¿Puede `card` jugarse desde `zone`? ('jugar_desde_cementerio' cubre
- *  Cementerio y Destierro; 'desde_cementerio' solo Cementerio). */
+ *  Cementerio y Destierro; 'desde_cementerio'/'..._destierro' solo Cementerio). */
 export function canPlayFromZone(card: Card, zone: 'graveyard' | 'exile'): boolean {
   if (hasPlayFromGraveyard(card)) return true;
-  return zone === 'graveyard' && hasDesdeCementerio(card);
+  return zone === 'graveyard' && (hasDesdeCementerio(card) || hasPlayFromGraveThenExile(card));
+}
+
+/**
+ * 'bota_aliados_elige_jugador' (Abrazo de Maipú): al jugarse, su dueño elige (en
+ * un modal) qué jugador bota tantas cartas del Castillo como Aliados haya en
+ * juego (sumando ambos jugadores).
+ */
+export function hasMillChoiceByAllies(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('bota_aliados_elige_jugador') ?? false;
+}
+
+/** Total de Aliados en juego (líneas de defensa y ataque de ambos jugadores). */
+export function totalAlliesInPlay(players: Record<PlayerId, PlayerState>): number {
+  return Object.values(players).reduce(
+    (n, p) => n + p.defenseField.filter((c) => c.tipo === 'aliado').length + p.attackField.filter((c) => c.tipo === 'aliado').length,
+    0,
+  );
 }
 
 /**

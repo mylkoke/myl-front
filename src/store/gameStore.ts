@@ -48,6 +48,9 @@ import {
   cannotLeavePlay,
   hasCombatOnlyExit,
   canPlayFromZone,
+  hasPlayFromGraveThenExile,
+  hasMillChoiceByAllies,
+  totalAlliesInPlay,
   hasCombatExileAll,
   hasCombatExilePay,
   COMBAT_EXILE_PAY_COST,
@@ -324,6 +327,25 @@ function momentForPhaseTrigger(phase: TurnPhase): AbilityMoment | null {
   return null;
 }
 
+/**
+ * 'bota_aliados_elige_jugador' (Abrazo de Maipú): al jugar el talismán, su dueño
+ * elige (modal `pendingMillChoice`) qué jugador bota tantas cartas del Castillo
+ * como Aliados en juego haya (ambos jugadores). Si no hay aliados, no hace nada.
+ */
+function maybeTalismanMillChoice(card: Card, playerId: PlayerId): void {
+  if (!hasMillChoiceByAllies(card)) return;
+  const st = useGameStore.getState();
+  if (st.isGameOver) return;
+  const count = totalAlliesInPlay(st.players);
+  if (count <= 0) {
+    useGameStore.getState().addLog(`${card.nombre}: no hay Aliados en juego, nadie bota.`, 'system');
+    return;
+  }
+  useGameStore.setState({
+    pendingMillChoice: { playerId, count, sourceName: card.nombre },
+  });
+}
+
 function maybeSelfSummon(card: Card, playerId: PlayerId): void {
   if (card.tipo !== 'aliado' || !hasSelfSummonFromDeck(card)) return;
   const st = useGameStore.getState();
@@ -394,6 +416,7 @@ export function buildInitialState(
     pendingFinalDraw: null,
     pendingAnnulRecover: null,
     pendingSelfRegroup: null,
+    pendingMillChoice: null,
     responseWindow: null,
     fxLightning: null,
     gameLog: [
@@ -658,6 +681,11 @@ interface GameActions {
    * Fase Final (o dejarla donde está si se rechaza).
    */
   resolveSelfRegroup: (accept: boolean, playerId: PlayerId) => void;
+  /**
+   * 'bota_aliados_elige_jugador' (Abrazo de Maipú): el dueño elige qué jugador
+   * bota las `count` cartas del Castillo (tantas como Aliados en juego).
+   */
+  resolveMillChoice: (targetPlayerId: PlayerId, playerId: PlayerId) => void;
   /** Replace the whole game state (online sync). */
   hydrateState: (state: GameState) => void;
   addLog: (msg: string, type?: GameLogEntry['type']) => void;
@@ -855,6 +883,10 @@ export const useGameStore = create<GameStore>()(
             },
           });
         }
+
+        // 'bota_aliados_elige_jugador' (Abrazo de Maipú, talismán): al jugarse,
+        // su dueño elige qué jugador bota tantas cartas como Aliados en juego.
+        if (card.tipo === 'talisman') maybeTalismanMillChoice(card, playerId);
 
         // 'barajar_mano_roba8': al entrar en juego, su dueño decide si baraja
         // su mano en el Castillo y roba 8.
@@ -2153,8 +2185,10 @@ export const useGameStore = create<GameStore>()(
           if (card.tipo === 'aliado') {
             base.defenseField = [...base.defenseField, { ...card, summonedThisTurn: true, tapped: false }];
           } else if (card.tipo === 'talisman') {
-            // Se resuelve y va (o vuelve) al Cementerio.
-            base.graveyard = [...base.graveyard, card];
+            // Se resuelve y vuelve al Cementerio; con 'desde_cementerio_destierro'
+            // (Abrazo de Maipú) se DESTIERRA al jugarse desde el Cementerio.
+            if (hasPlayFromGraveThenExile(card)) base.exile = [...base.exile, card];
+            else base.graveyard = [...base.graveyard, card];
           } else if (card.tipo === 'oro') {
             base.gold = [...base.gold, card];
             base.goldCount = base.gold.length;
@@ -2190,6 +2224,10 @@ export const useGameStore = create<GameStore>()(
             expiresAt: Date.now() + RESPONSE_WINDOW_MS,
           },
         });
+
+        // 'bota_aliados_elige_jugador' (Abrazo de Maipú): al jugarse desde el
+        // Cementerio también dispara la elección de quién bota.
+        if (card.tipo === 'talisman') maybeTalismanMillChoice(card, playerId);
 
         // 'barajar_mano_roba8': también aplica al entrar desde estas zonas.
         if (hasShuffleDraw(card)) {
@@ -2926,6 +2964,33 @@ export const useGameStore = create<GameStore>()(
           };
         });
         get().addLog(`${player.name} agrupa a ${cardName} a su ${ZONE_LABELS_STORE[toZone]}.`, 'action');
+      },
+
+      resolveMillChoice: (targetPlayerId, playerId) => {
+        const { pendingMillChoice, players } = get();
+        if (!pendingMillChoice || pendingMillChoice.playerId !== playerId) return;
+        const { count, sourceName } = pendingMillChoice;
+        const targetName = players[targetPlayerId].name;
+        const n = Math.min(count, players[targetPlayerId].deck.length);
+        set((s) => {
+          const t = s.players[targetPlayerId];
+          const milled = t.deck.slice(0, n).map(createCardInPlay);
+          return {
+            pendingMillChoice: null,
+            players: {
+              ...s.players,
+              [targetPlayerId]: {
+                ...t,
+                deck: t.deck.slice(n),
+                graveyard: [...t.graveyard, ...milled],
+                life: t.deck.length - n,
+              },
+            },
+          };
+        });
+        get().addLog(`${sourceName}: ${targetName} bota ${n} carta(s) del Castillo al Cementerio.`, 'action');
+        const { isOver, winnerId } = checkGameOver(get().players);
+        if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
       },
 
       resolveTypeChoice: (tipo, playerId) => {

@@ -61,11 +61,13 @@ export function GameBoard() {
   const pendingFinalDraw = useGameStore((s) => s.pendingFinalDraw);
   const pendingAnnulRecover = useGameStore((s) => s.pendingAnnulRecover);
   const pendingSelfRegroup = useGameStore((s) => s.pendingSelfRegroup);
+  const pendingMillChoice = useGameStore((s) => s.pendingMillChoice);
   const responseWindow = useGameStore((s) => s.responseWindow);
   const { discardFromHand, respondWithAnnul, passResponse, closeResponseWindow, resolveShuffleChoice,
     resolveSwapChoice, resolveTypeChoice, resolvePatriotaTrigger, pickPatriotaGraveyardCard,
     discardRivalTalisman, tutorCopyFromZone, cancelCopyTutor,
     resolveSelfSummon, cancelSelfSummon, resolveFinalDraw, resolveAnnulRecover, resolveSelfRegroup,
+    resolveMillChoice,
     playCard: playCardAction } = useGameActions();
   const pendingSwapChoice = useGameStore((s) => s.pendingSwapChoice);
   const pendingTypeChoice = useGameStore((s) => s.pendingTypeChoice);
@@ -800,6 +802,31 @@ export function GameBoard() {
           </div>
         </div>
       )}
+
+      {pendingMillChoice && (!isOnline || mySeat === pendingMillChoice.playerId) && (() => {
+        const owner = pendingMillChoice.playerId;
+        const rival: PlayerId = owner === 'player' ? 'opponent' : 'player';
+        return (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
+            <div className="w-full max-w-sm bg-slate-900 border border-amber-500/40 rounded-2xl p-4 sm:p-6 shadow-2xl text-center">
+              <div className="text-amber-300 text-xs uppercase tracking-widest font-bold">
+                {pendingMillChoice.sourceName}
+              </div>
+              <p className="text-slate-300 text-sm mt-2 mb-4">
+                ¿Quién bota {pendingMillChoice.count} carta(s) del Mazo Castillo?
+              </p>
+              <div className="flex gap-2">
+                <Button variant="secondary" fullWidth onClick={() => resolveMillChoice(owner, owner)}>
+                  Tú
+                </Button>
+                <Button variant="primary" fullWidth onClick={() => resolveMillChoice(rival, owner)}>
+                  Oponente
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {pendingSelfRegroup && (!isOnline || mySeat === pendingSelfRegroup.playerId) && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
