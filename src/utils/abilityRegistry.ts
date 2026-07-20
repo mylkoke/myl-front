@@ -134,10 +134,29 @@ export function auraEnablesPlayFromZone(
   return best;
 }
 
+/**
+ * ¿La `definition` está bien formada? El motor asume en todas partes que una
+ * receta registrada tiene `effect` (con `kind`) y `moments` (array). Una entrada
+ * malformada del catálogo (Atlas) reventaría el render (effectiveForce, AllySlot…);
+ * la validamos al cargar para que el registro solo contenga recetas seguras.
+ */
+function isValidDefinition(def: unknown): def is AbilityDefinition {
+  if (!def || typeof def !== 'object') return false;
+  const d = def as Partial<AbilityDefinition>;
+  return (
+    Array.isArray(d.moments) &&
+    !!d.effect &&
+    typeof d.effect === 'object' &&
+    typeof (d.effect as { kind?: unknown }).kind === 'string'
+  );
+}
+
 /** Reemplaza el registro con una lista de definiciones (code → definition). */
 export function setAbilityDefinitions(entries: { code: string; definition: AbilityDefinition }[]): void {
   registry.clear();
-  for (const { code, definition } of entries) registry.set(code, definition);
+  for (const { code, definition } of entries) {
+    if (isValidDefinition(definition)) registry.set(code, definition);
+  }
 }
 
 /**
