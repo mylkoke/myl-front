@@ -213,7 +213,7 @@ export const SEED_ABILITIES = [
     descripcion: 'Esta carta puede jugarse en cualquier momento en que por regla podría jugarse un Talismán: durante el turno rival, como bloqueador sorpresa ante un ataque declarado, o en la Fase Final del oponente — pagando su Coste normal.',
     implemented: true,
     categoria: 'especial',
-    tipos: ['aliado', 'arma', 'totem'],
+    tipos: ['aliado', 'arma', 'totem', 'talisman'],
   },
   {
     code: 'agrupar_fase_final',
