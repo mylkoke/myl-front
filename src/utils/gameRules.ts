@@ -541,6 +541,16 @@ export function hasMillChoiceByAllies(card: Card): boolean {
   return card.habilidadesEspeciales?.includes('bota_aliados_elige_jugador') ?? false;
 }
 
+/**
+ * 'devuelve_aliados_bota' (Desastre de Rancagua): al jugarse, devuelve a la Mano
+ * de su dueño TODOS los Aliados en juego (ambos jugadores; salvo los protegidos
+ * por 'no_sale_del_juego'/'solo_sale_combate'); luego un jugador (a elección del
+ * dueño del talismán) bota tantas cartas del Castillo como Aliados se devolvieron.
+ */
+export function hasBounceAlliesMill(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('devuelve_aliados_bota') ?? false;
+}
+
 /** Total de Aliados en juego (líneas de defensa y ataque de ambos jugadores). */
 export function totalAlliesInPlay(players: Record<PlayerId, PlayerState>): number {
   return Object.values(players).reduce(

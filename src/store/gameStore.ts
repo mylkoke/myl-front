@@ -50,6 +50,7 @@ import {
   canPlayFromZone,
   hasPlayFromGraveThenExile,
   hasMillChoiceByAllies,
+  hasBounceAlliesMill,
   totalAlliesInPlay,
   hasCombatExileAll,
   hasCombatExilePay,
@@ -344,6 +345,62 @@ function maybeTalismanMillChoice(card: Card, playerId: PlayerId): void {
   useGameStore.setState({
     pendingMillChoice: { playerId, count, sourceName: card.nombre },
   });
+}
+
+/**
+ * 'devuelve_aliados_bota' (Desastre de Rancagua): al jugar el talismán, devuelve
+ * a la Mano de su dueño TODOS los Aliados en juego de ambos jugadores (salvo los
+ * protegidos por 'no_sale_del_juego'/'solo_sale_combate'; sus armas equipadas van
+ * al Cementerio). Cuenta cuántos salieron y abre `pendingMillChoice` para que el
+ * dueño elija qué jugador bota esa cantidad del Castillo.
+ */
+function maybeTalismanBounceMill(card: Card, playerId: PlayerId): void {
+  if (!hasBounceAlliesMill(card)) return;
+  const st = useGameStore.getState();
+  if (st.isGameOver) return;
+  const canBounce = (c: CardInPlay) =>
+    c.tipo === 'aliado' && !cannotLeavePlay(c) && !hasCombatOnlyExit(c);
+  let bounced = 0;
+  const patched: Record<string, PlayerState> = {};
+  for (const pid of ['player', 'opponent'] as PlayerId[]) {
+    const p = st.players[pid];
+    const toHand = [...p.defenseField, ...p.attackField].filter(canBounce);
+    if (toHand.length === 0) {
+      patched[pid] = p;
+      continue;
+    }
+    bounced += toHand.length;
+    const ids = new Set(toHand.map((c) => c.instanceId));
+    const orphanWeapons = toHand.flatMap((c) => weaponsOf(p, c.instanceId));
+    const restWeapons = { ...p.equippedWeapons };
+    for (const id of ids) delete restWeapons[id];
+    // Al volver a la mano se limpia el estado de instancia y bonos/debilitaciones.
+    const returned = toHand.map((c) => ({
+      ...c,
+      tapped: false,
+      attackedThisTurn: false,
+      summonedThisTurn: false,
+    }));
+    const tempBonuses = { ...p.weaponTempBonuses };
+    for (const id of ids) delete tempBonuses[id];
+    patched[pid] = {
+      ...p,
+      defenseField: p.defenseField.filter((c) => !ids.has(c.instanceId)),
+      attackField: p.attackField.filter((c) => !ids.has(c.instanceId)),
+      hand: [...p.hand, ...returned],
+      graveyard: [...p.graveyard, ...orphanWeapons],
+      equippedWeapons: restWeapons,
+      weakenedAllies: p.weakenedAllies.filter((id) => !ids.has(id)),
+      weaponTempBonuses: tempBonuses,
+    };
+  }
+  useGameStore.setState({ players: { ...st.players, ...patched } });
+  useGameStore
+    .getState()
+    .addLog(`${card.nombre}: ${bounced} Aliado(s) vuelven a la Mano de su dueño.`, 'action');
+  if (bounced > 0) {
+    useGameStore.setState({ pendingMillChoice: { playerId, count: bounced, sourceName: card.nombre } });
+  }
 }
 
 function maybeSelfSummon(card: Card, playerId: PlayerId): void {
@@ -900,6 +957,9 @@ export const useGameStore = create<GameStore>()(
         // 'bota_aliados_elige_jugador' (Abrazo de Maipú, talismán): al jugarse,
         // su dueño elige qué jugador bota tantas cartas como Aliados en juego.
         if (card.tipo === 'talisman') maybeTalismanMillChoice(card, playerId);
+        // 'devuelve_aliados_bota' (Desastre de Rancagua): devuelve todos los
+        // Aliados a la mano y abre la elección de quién bota (por los devueltos).
+        if (card.tipo === 'talisman') maybeTalismanBounceMill(card, playerId);
 
         // 'barajar_mano_roba8': al entrar en juego, su dueño decide si baraja
         // su mano en el Castillo y roba 8.
@@ -2241,6 +2301,7 @@ export const useGameStore = create<GameStore>()(
         // 'bota_aliados_elige_jugador' (Abrazo de Maipú): al jugarse desde el
         // Cementerio también dispara la elección de quién bota.
         if (card.tipo === 'talisman') maybeTalismanMillChoice(card, playerId);
+        if (card.tipo === 'talisman') maybeTalismanBounceMill(card, playerId);
 
         // 'barajar_mano_roba8': también aplica al entrar desde estas zonas.
         if (hasShuffleDraw(card)) {
