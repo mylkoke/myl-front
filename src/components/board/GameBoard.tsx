@@ -53,6 +53,7 @@ export function GameBoard() {
   const destroyTargeting = useTargetingStore((s) => s.destroy);
   const destroyAnyTargeting = useTargetingStore((s) => s.destroyAny);
   const exileAnyTargeting = useTargetingStore((s) => s.exileAny);
+  const declDestroyTargeting = useTargetingStore((s) => s.declDestroy);
   const cancelTargeting = useTargetingStore((s) => s.cancel);
   const pendingDiscard = useGameStore((s) => s.pendingDiscard);
   const pendingHandDiscard = useGameStore((s) => s.pendingHandDiscard);
@@ -1019,7 +1020,7 @@ export function GameBoard() {
       )}
 
       {/* ── Targeting banner: eligiendo objetivo (debilitar / destruir / desterrar) ── */}
-      {(weakenTargeting || destroyTargeting || destroyAnyTargeting || exileAnyTargeting) && (
+      {(weakenTargeting || destroyTargeting || destroyAnyTargeting || exileAnyTargeting || declDestroyTargeting) && (
         <div
           className={`absolute top-14 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 border rounded-full px-4 py-2 flex items-center gap-3 shadow-xl ${
             exileAnyTargeting ? 'border-purple-500/50' : 'border-red-500/50'
@@ -1032,7 +1033,9 @@ export function GameBoard() {
               ? 'Elige un aliado: será destruido (botas 3 cartas de tu Castillo)'
               : destroyAnyTargeting
               ? 'Elige una carta en juego (no Oro): será destruida'
-              : 'Elige una carta en juego: pagas 2 Oros y será desterrada'}
+              : exileAnyTargeting
+              ? 'Elige una carta en juego: pagas 2 Oros y será desterrada'
+              : 'Elige una carta en juego: será destruida'}
           </span>
           <button
             onClick={cancelTargeting}

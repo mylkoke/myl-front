@@ -86,6 +86,9 @@ export function CreateAbilityPage() {
   const [buffAmount, setBuffAmount] = useState(1);
   const [buffScope, setBuffScope] = useState<'owner' | 'both'>('both');
   const [buffExcludeSelf, setBuffExcludeSelf] = useState(true);
+  // Efecto 'destruir': tipo objetivo y de quién.
+  const [destroyTargetTipo, setDestroyTargetTipo] = useState<CardType | null>(null);
+  const [destroyScope, setDestroyScope] = useState<'self' | 'opponent' | 'both'>('both');
 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
@@ -107,16 +110,18 @@ export function CreateAbilityPage() {
   const isEnablePlay = effectKind === 'habilitar_juego';
   const isRecoverSelf = effectKind === 'recuperar_self';
   const isBuffForce = effectKind === 'buff_fuerza';
+  const isDestroy = effectKind === 'destruir';
   const usesTargetFilters = effectKind === 'invocar' || isEnablePlay;
-  const needsFrom = !isRecoverSelf && !isBuffForce;
-  const needsTo = !isEnablePlay && !isBuffForce;
-  const zonesOk = isBuffForce
-    ? true
-    : isRecoverSelf
-    ? to !== null
-    : isEnablePlay
-    ? from !== null
-    : from !== null && to !== null && from !== to;
+  const needsFrom = !isRecoverSelf && !isBuffForce && !isDestroy;
+  const needsTo = !isEnablePlay && !isBuffForce && !isDestroy;
+  const zonesOk =
+    isBuffForce || isDestroy
+      ? true
+      : isRecoverSelf
+      ? to !== null
+      : isEnablePlay
+      ? from !== null
+      : from !== null && to !== null && from !== to;
   const countOk = countMode === 'dynamic' || countValue > 0;
   const canSave =
     nombre.trim().length > 0 &&
@@ -147,6 +152,12 @@ export function CreateAbilityPage() {
           scope: buffScope,
           excludeSelf: buffExcludeSelf,
         },
+      };
+    }
+    if (effectKind === 'destruir') {
+      return {
+        ...base,
+        effect: { kind: 'destruir', targetTipo: destroyTargetTipo, scope: destroyScope },
       };
     }
     if (effectKind === 'invocar') {
@@ -229,6 +240,8 @@ export function CreateAbilityPage() {
       setBuffAmount(1);
       setBuffScope('both');
       setBuffExcludeSelf(true);
+      setDestroyTargetTipo(null);
+      setDestroyScope('both');
     } catch (err) {
       const text =
         err instanceof ApiError
@@ -266,6 +279,12 @@ export function CreateAbilityPage() {
       const otro = buffExcludeSelf ? 'otro ' : '';
       return `${when}: ${receptores} que controles ganan ${buffAmount} de Fuerza por cada ${otro}${contados} ${ambito}.`;
     }
+    if (isDestroy) {
+      const queTipo = destroyTargetTipo ? `un(a) ${destroyTargetTipo}` : 'una carta';
+      const deQuien =
+        destroyScope === 'opponent' ? 'del rival' : destroyScope === 'self' ? 'propia' : 'de cualquier jugador';
+      return `${when}:${costText} ${modeText} destruir ${queTipo} en juego ${deQuien}.`;
+    }
     if (isEnablePlay) {
       const filtro = [
         summonRaza.trim() ? `raza ${summonRaza.trim()}` : null,
@@ -297,8 +316,9 @@ export function CreateAbilityPage() {
   }, [
     moments, mode, effectKind, from, to, countMode, countValue, countSource,
     effectiveBarajar, moveTarget, costGold, costMill, summonRaza, summonTipo, summonMaxCoste,
-    isEnablePlay, isRecoverSelf, isBuffForce, needsFrom, needsTo, costReduce, minCoste,
+    isEnablePlay, isRecoverSelf, isBuffForce, isDestroy, needsFrom, needsTo, costReduce, minCoste,
     buffTargetRaza, buffCountRaza, buffAmount, buffScope, buffExcludeSelf,
+    destroyTargetTipo, destroyScope,
   ]);
 
   return (
@@ -501,6 +521,43 @@ export function CreateAbilityPage() {
                   />
                   No contar al propio Aliado que recibe el bono ("por cada OTRO")
                 </label>
+              </>
+            )}
+
+            {isDestroy && (
+              <>
+                <p className="text-[11px] text-slate-400">
+                  El jugador elige una carta EN JUEGO (en las líneas del tablero) que cumpla el
+                  filtro y la destruye → Cementerio. Respeta Indestructible / "no sale del juego" e
+                  inmunidades. (Destruir solo aplica a cartas en juego; quitar de la Mano/Mazo son
+                  otras mecánicas.)
+                </p>
+                <div>
+                  <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1.5">
+                    Tipo de carta a destruir (vacío = cualquiera)
+                  </label>
+                  <LabelPicker
+                    tone="emerald"
+                    value={destroyTargetTipo}
+                    onChange={(v) => setDestroyTargetTipo(v === destroyTargetTipo ? null : v)}
+                    options={CARD_TYPES.map((t) => ({ value: t, label: t }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1.5">
+                    ¿De quién puede ser el objetivo?
+                  </label>
+                  <LabelPicker
+                    tone="amber"
+                    value={destroyScope}
+                    onChange={setDestroyScope}
+                    options={[
+                      { value: 'both', label: 'De cualquier jugador' },
+                      { value: 'opponent', label: 'Solo del rival' },
+                      { value: 'self', label: 'Solo propias' },
+                    ]}
+                  />
+                </div>
               </>
             )}
             {/* Origen: mover / invocar / habilitar_juego (no recuperar_self) */}

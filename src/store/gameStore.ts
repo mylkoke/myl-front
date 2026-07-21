@@ -566,6 +566,19 @@ interface GameActions {
     playerId: PlayerId,
   ) => void;
   /**
+   * Efecto declarativo 'destruir' (constructor): destruye la carta en juego
+   * objetivo según los filtros de la receta (`targetTipo`/`scope`), pagando su
+   * coste (Oros/botar) y respetando indestructible/no_sale/inmunidades. 1×/turno
+   * si la receta lo pide.
+   */
+  destroyDeclarativeTarget: (
+    sourceInstanceId: string,
+    code: string,
+    targetInstanceId: string,
+    targetOwnerId: PlayerId,
+    playerId: PlayerId,
+  ) => void;
+  /**
    * 'barajar_mano_roba8': resuelve la decisión — si acepta, baraja la mano
    * en el Mazo Castillo (orden aleatorio) y roba 8 cartas nuevas.
    */
@@ -2582,6 +2595,137 @@ export const useGameStore = create<GameStore>()(
           `${player.name} paga ${COMBAT_EXILE_PAY_COST} Oros y destierra a ${target.nombre}.`,
           'combat',
         );
+        const { isOver, winnerId } = checkGameOver(get().players);
+        if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
+      },
+
+      destroyDeclarativeTarget: (sourceInstanceId, code, targetInstanceId, targetOwnerId, playerId) => {
+        const { players, turn, combat, responseWindow, isGameOver } = get();
+        if (isGameOver || combat || responseWindow) return;
+        const player = players[playerId];
+        if (turn.currentPlayer !== playerId) {
+          get().addLog('No es tu turno.', 'error');
+          return;
+        }
+        const def = getAbilityDefinition(code);
+        if (!def || def.mode !== 'activable' || def.effect.kind !== 'destruir') return;
+        const effect = def.effect;
+        if (!activableAvailableInPhase(def, turn.phase)) {
+          get().addLog('Esta habilidad no puede activarse en esta fase.', 'error');
+          return;
+        }
+        const source = [
+          ...player.defenseField,
+          ...player.attackField,
+          ...player.supportField,
+          ...player.gold,
+        ].find((c) => c.instanceId === sourceInstanceId);
+        if (!source) return;
+        const useKey = abilityUseKey(sourceInstanceId, code);
+        if (isOncePerTurn(def) && player.allyAbilityUsedThisTurn.includes(useKey)) {
+          get().addLog('Ya usaste esta habilidad este turno.', 'error');
+          return;
+        }
+        // Ámbito: de quién puede ser el objetivo.
+        if (effect.scope === 'opponent' && targetOwnerId === playerId) return;
+        if (effect.scope === 'self' && targetOwnerId !== playerId) return;
+        const cost = def.costGold ?? 0;
+        const mill = def.costMill ?? 0;
+        if (player.goldCount < cost) {
+          get().addLog(`Necesitas ${cost} Oros disponibles.`, 'error');
+          return;
+        }
+        if (player.deck.length < mill) {
+          get().addLog(`Necesitas ${mill} cartas en tu Mazo Castillo.`, 'error');
+          return;
+        }
+        const targetOwner = players[targetOwnerId];
+        const target = [
+          ...targetOwner.defenseField,
+          ...targetOwner.attackField,
+          ...targetOwner.supportField,
+        ].find(
+          (c) =>
+            c.instanceId === targetInstanceId &&
+            c.tipo !== 'oro' &&
+            (!effect.targetTipo || c.tipo === effect.targetTipo),
+        );
+        if (!target) {
+          get().addLog('Objetivo no válido para esta habilidad.', 'error');
+          return;
+        }
+        if (immuneToAllyOrOpponentEffect(target)) {
+          get().addLog(`${target.nombre} es inmune a las habilidades de Aliados.`, 'error');
+          return;
+        }
+        if (
+          isIndestructibleEffective(target, targetOwner) ||
+          cannotLeavePlay(target) ||
+          hasCombatOnlyExit(target)
+        ) {
+          get().addLog(`${target.nombre} no puede ser destruido.`, 'error');
+          return;
+        }
+        const paidGold = cost > 0 ? player.gold.slice(player.gold.length - cost) : [];
+        const remainingGold = cost > 0 ? player.gold.slice(0, player.gold.length - cost) : player.gold;
+        const milled = mill > 0 ? player.deck.slice(0, mill).map(createCardInPlay) : [];
+        const remainingDeck = mill > 0 ? player.deck.slice(mill) : player.deck;
+        const usedNext = isOncePerTurn(def)
+          ? [...player.allyAbilityUsedThisTurn, useKey]
+          : player.allyAbilityUsedThisTurn;
+        set((s) => {
+          const o = s.players[targetOwnerId];
+          const weapons = weaponsOf(o, targetInstanceId);
+          const restWeapons = { ...o.equippedWeapons };
+          delete restWeapons[targetInstanceId];
+          const removeTarget = (p: PlayerState): PlayerState => ({
+            ...p,
+            defenseField: p.defenseField.filter((c) => c.instanceId !== targetInstanceId),
+            attackField: p.attackField.filter((c) => c.instanceId !== targetInstanceId),
+            supportField: p.supportField.filter((c) => c.instanceId !== targetInstanceId),
+            equippedWeapons: restWeapons,
+          });
+          const same = playerId === targetOwnerId;
+          if (same) {
+            const p = removeTarget(s.players[playerId]);
+            return {
+              players: {
+                ...s.players,
+                [playerId]: {
+                  ...p,
+                  gold: remainingGold,
+                  goldPaid: [...p.goldPaid, ...paidGold],
+                  goldCount: remainingGold.length,
+                  deck: remainingDeck,
+                  life: remainingDeck.length,
+                  graveyard: [...p.graveyard, ...milled, target, ...weapons],
+                  goldSpentThisTurn: cost > 0 ? true : p.goldSpentThisTurn,
+                  allyAbilityUsedThisTurn: usedNext,
+                },
+              },
+            };
+          }
+          const patchedOwner = removeTarget(o);
+          return {
+            players: {
+              ...s.players,
+              [targetOwnerId]: { ...patchedOwner, graveyard: [...patchedOwner.graveyard, target, ...weapons] },
+              [playerId]: {
+                ...s.players[playerId],
+                gold: remainingGold,
+                goldPaid: [...s.players[playerId].goldPaid, ...paidGold],
+                goldCount: remainingGold.length,
+                deck: remainingDeck,
+                life: remainingDeck.length,
+                graveyard: [...s.players[playerId].graveyard, ...milled],
+                goldSpentThisTurn: cost > 0 ? true : s.players[playerId].goldSpentThisTurn,
+                allyAbilityUsedThisTurn: usedNext,
+              },
+            },
+          };
+        });
+        useTargetingStore.getState().cancel();
+        get().addLog(`${source.nombre}: ${player.name} destruye a ${target.nombre}.`, 'combat');
         const { isOver, winnerId } = checkGameOver(get().players);
         if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
       },

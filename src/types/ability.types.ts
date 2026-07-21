@@ -77,7 +77,8 @@ export type AbilityEffectKind =
   | 'invocar'
   | 'habilitar_juego'
   | 'recuperar_self'
-  | 'buff_fuerza';
+  | 'buff_fuerza'
+  | 'destruir';
 
 export const EFFECT_LABELS: Record<AbilityEffectKind, string> = {
   mover: 'Mover / Barajar cartas',
@@ -85,6 +86,7 @@ export const EFFECT_LABELS: Record<AbilityEffectKind, string> = {
   habilitar_juego: 'Habilitar jugar cartas desde otra zona (aura)',
   recuperar_self: 'Recuperar / agrupar esta misma carta a otra zona',
   buff_fuerza: 'Bonificar la Fuerza de aliados (aura)',
+  destruir: 'Destruir una carta en juego',
 };
 
 /**
@@ -195,12 +197,29 @@ export interface ForceBuffEffect {
   excludeSelf: boolean;
 }
 
+/**
+ * Efecto "destruir" (activable, con selección de objetivo): el jugador elige una
+ * carta EN JUEGO (líneas del tablero) del tipo `targetTipo` (null = cualquiera)
+ * dentro del `scope` (propias, del rival o de ambos) y la destruye → Cementerio.
+ * Respeta 'indestructible', 'no_sale_del_juego', 'solo_sale_combate' e inmunidades.
+ * (Destruir solo aplica a cartas en juego; quitar de mano/mazo son otras
+ * mecánicas: descartar / botar.) Ej. Mateo de Toro: targetTipo='aliado', scope='both'.
+ */
+export interface DestroyEffect {
+  kind: 'destruir';
+  /** Tipo de carta objetivo (null = cualquiera). */
+  targetTipo: import('./card.types').CardType | null;
+  /** De quién puede ser el objetivo. */
+  scope: 'self' | 'opponent' | 'both';
+}
+
 export type AbilityEffect =
   | MoveEffect
   | SummonEffect
   | EnablePlayEffect
   | RecoverSelfEffect
-  | ForceBuffEffect;
+  | ForceBuffEffect
+  | DestroyEffect;
 
 /** Receta declarativa completa de una habilidad. */
 export interface AbilityDefinition {

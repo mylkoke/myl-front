@@ -57,6 +57,7 @@ export function useGameActions() {
   const millDestroyAlly = useGameStore((s) => s.millDestroyAlly);
   const destroyNonGoldCard = useGameStore((s) => s.destroyNonGoldCard);
   const exileTargetCard = useGameStore((s) => s.exileTargetCard);
+  const destroyDeclarativeTarget = useGameStore((s) => s.destroyDeclarativeTarget);
   const playFromZone = useGameStore((s) => s.playFromZone);
   const playRecycledTalisman = useGameStore((s) => s.playRecycledTalisman);
 
@@ -162,6 +163,7 @@ export function useGameActions() {
     millDestroyAlly: guarded(millDestroyAlly),
     destroyNonGoldCard: guarded(destroyNonGoldCard),
     exileTargetCard: guarded(exileTargetCard),
+    destroyDeclarativeTarget: guarded(destroyDeclarativeTarget),
     activateMillGold: guarded(activateMillGold),
     activateDeclarativeAbility: guarded(activateDeclarativeAbility),
     summonDeclarativeFromZone: guarded(summonDeclarativeFromZone),

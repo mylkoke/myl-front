@@ -50,7 +50,7 @@ export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = '
   const [deckSearchOpen, setDeckSearchOpen] = useState(false);
   const { equipWeapon, summonCaudilloFromDeck, weakenAlly, millDestroyAlly, swapControl,
     playRecycledTalisman, activateMillGold, chooseRaceSuppress, equipWeaponFromZone,
-    destroyNonGoldCard, exileTargetCard, activateDeclarativeAbility, summonDeclarativeFromZone } = useGameActions();
+    destroyNonGoldCard, exileTargetCard, destroyDeclarativeTarget, activateDeclarativeAbility, summonDeclarativeFromZone } = useGameActions();
   const [recycleOpen, setRecycleOpen] = useState(false);
   const [razaPickerOpen, setRazaPickerOpen] = useState(false);
   // Habilidad declarativa 'invocar' con selección en curso (o null).
@@ -85,9 +85,11 @@ export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = '
   const destroyAnyTargeting = useTargetingStore((s) => s.destroyAny);
   // 'destierro_combate_pago' (Lord Cochrane): cualquier aliado en juego es objetivo.
   const exileAnyTargeting = useTargetingStore((s) => s.exileAny);
+  // Efecto declarativo 'destruir' (constructor): cualquier carta en juego elegible.
+  const declDestroyTargeting = useTargetingStore((s) => s.declDestroy);
   const cancelTargeting = useTargetingStore((s) => s.cancel);
   const anyTargeting =
-    weakenTargeting ?? destroyTargeting ?? swapTargeting ?? equipTargeting ?? destroyAnyTargeting ?? exileAnyTargeting;
+    weakenTargeting ?? destroyTargeting ?? swapTargeting ?? equipTargeting ?? destroyAnyTargeting ?? exileAnyTargeting ?? declDestroyTargeting;
 
   const isMyTurn = turn.currentPlayer === playerId && !isOpponent;
 
@@ -204,6 +206,13 @@ export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = '
                 label: `${EFFECT_LABELS.invocar}${def.effect.raza ? ` (${def.effect.raza})` : ''}${costTag}`,
                 enabled: usable,
                 onUse: () => setDeclSummon({ code, def }),
+              };
+            }
+            if (def.effect.kind === 'destruir') {
+              return {
+                label: `${EFFECT_LABELS.destruir}${def.effect.targetTipo ? ` (${def.effect.targetTipo})` : ''}${costTag}`,
+                enabled: usable,
+                onUse: () => useTargetingStore.getState().startDeclDestroy(ally.instanceId, playerId, code),
               };
             }
             return {
@@ -342,6 +351,15 @@ export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = '
                       ally.instanceId,
                       playerId,
                       exileAnyTargeting.playerId,
+                    )
+                : declDestroyTargeting
+                ? () =>
+                    destroyDeclarativeTarget(
+                      declDestroyTargeting.sourceInstanceId,
+                      declDestroyTargeting.code,
+                      ally.instanceId,
+                      playerId,
+                      declDestroyTargeting.playerId,
                     )
                 : () => setDetailCard(ally)
             }
