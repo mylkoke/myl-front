@@ -64,7 +64,10 @@ export function canPlayCard(
   // Los talismanes pueden pagarse también con oros virtuales 'oro_talismanes'.
   const available =
     card.tipo === 'talisman' ? player.goldCount + player.talismanGold : player.goldCount;
-  const cost = costOverride ?? (players ? effectiveCost(card, players) : card.coste);
+  // 'gratis_si_5_oros' (Abordaje): coste 0 si controla ≥5 Oros (Reserva + Pagado).
+  const cost = playsFreeIfGold(card, player)
+    ? 0
+    : costOverride ?? (players ? effectiveCost(card, players) : card.coste);
   if (cost > available) {
     return {
       allowed: false,
@@ -539,6 +542,33 @@ export function canPlayFromZone(card: Card, zone: 'graveyard' | 'exile'): boolea
  */
 export function hasMillChoiceByAllies(card: Card): boolean {
   return card.habilidadesEspeciales?.includes('bota_aliados_elige_jugador') ?? false;
+}
+
+/** Oros mínimos (Reserva + Oro Pagado) para jugar gratis con 'gratis_si_5_oros'. */
+export const FREE_IF_GOLD_MIN = 5;
+
+/**
+ * 'gratis_si_5_oros' (Abordaje): si el jugador controla FREE_IF_GOLD_MIN o más
+ * Oros (Reserva + Oro Pagado), puede jugar esta carta sin pagar su Coste.
+ */
+export function hasFreeIfGold(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('gratis_si_5_oros') ?? false;
+}
+
+/** ¿`card` se juega gratis para `player` por 'gratis_si_5_oros'? */
+export function playsFreeIfGold(card: Card, player: PlayerState): boolean {
+  return hasFreeIfGold(card) && player.gold.length + player.goldPaid.length >= FREE_IF_GOLD_MIN;
+}
+
+/** +Fuerza temporal que otorga 'buff_aliado_4_objetivo' (Abordaje) al objetivo. */
+export const BUFF_ALLY_TARGET_AMOUNT = 4;
+
+/**
+ * 'buff_aliado_4_objetivo' (Abordaje): al jugarse, el dueño elige un Aliado en
+ * juego (de cualquier jugador) que gana +4 de Fuerza hasta la Fase Final.
+ */
+export function hasBuffAllyTarget(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('buff_aliado_4_objetivo') ?? false;
 }
 
 /**

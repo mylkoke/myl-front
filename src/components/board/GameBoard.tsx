@@ -54,6 +54,7 @@ export function GameBoard() {
   const destroyAnyTargeting = useTargetingStore((s) => s.destroyAny);
   const exileAnyTargeting = useTargetingStore((s) => s.exileAny);
   const declDestroyTargeting = useTargetingStore((s) => s.declDestroy);
+  const buffTargeting = useTargetingStore((s) => s.buffTarget);
   const cancelTargeting = useTargetingStore((s) => s.cancel);
   const pendingDiscard = useGameStore((s) => s.pendingDiscard);
   const pendingHandDiscard = useGameStore((s) => s.pendingHandDiscard);
@@ -1019,14 +1020,14 @@ export function GameBoard() {
         </div>
       )}
 
-      {/* ── Targeting banner: eligiendo objetivo (debilitar / destruir / desterrar) ── */}
-      {(weakenTargeting || destroyTargeting || destroyAnyTargeting || exileAnyTargeting || declDestroyTargeting) && (
+      {/* ── Targeting banner: eligiendo objetivo (debilitar / destruir / desterrar / potenciar) ── */}
+      {(weakenTargeting || destroyTargeting || destroyAnyTargeting || exileAnyTargeting || declDestroyTargeting || buffTargeting) && (
         <div
           className={`absolute top-14 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 border rounded-full px-4 py-2 flex items-center gap-3 shadow-xl ${
-            exileAnyTargeting ? 'border-purple-500/50' : 'border-red-500/50'
+            exileAnyTargeting ? 'border-purple-500/50' : buffTargeting ? 'border-emerald-500/50' : 'border-red-500/50'
           }`}
         >
-          <span className={`text-xs font-bold ${exileAnyTargeting ? 'text-purple-300' : 'text-red-300'}`}>
+          <span className={`text-xs font-bold ${exileAnyTargeting ? 'text-purple-300' : buffTargeting ? 'text-emerald-300' : 'text-red-300'}`}>
             {weakenTargeting
               ? 'Elige un aliado: tendrá Fuerza 0 hasta la Fase Final'
               : destroyTargeting
@@ -1035,7 +1036,9 @@ export function GameBoard() {
               ? 'Elige una carta en juego (no Oro): será destruida'
               : exileAnyTargeting
               ? 'Elige una carta en juego: pagas 2 Oros y será desterrada'
-              : 'Elige una carta en juego: será destruida'}
+              : declDestroyTargeting
+              ? 'Elige una carta en juego: será destruida'
+              : `Elige un Aliado: gana +${buffTargeting?.amount ?? 4} de Fuerza hasta la Fase Final`}
           </span>
           <button
             onClick={cancelTargeting}

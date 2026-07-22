@@ -50,7 +50,7 @@ export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = '
   const [deckSearchOpen, setDeckSearchOpen] = useState(false);
   const { equipWeapon, summonCaudilloFromDeck, weakenAlly, millDestroyAlly, swapControl,
     playRecycledTalisman, activateMillGold, chooseRaceSuppress, equipWeaponFromZone,
-    destroyNonGoldCard, exileTargetCard, destroyDeclarativeTarget, activateDeclarativeAbility, summonDeclarativeFromZone } = useGameActions();
+    destroyNonGoldCard, exileTargetCard, destroyDeclarativeTarget, buffTargetAlly, activateDeclarativeAbility, summonDeclarativeFromZone } = useGameActions();
   const [recycleOpen, setRecycleOpen] = useState(false);
   const [razaPickerOpen, setRazaPickerOpen] = useState(false);
   // Habilidad declarativa 'invocar' con selección en curso (o null).
@@ -87,9 +87,11 @@ export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = '
   const exileAnyTargeting = useTargetingStore((s) => s.exileAny);
   // Efecto declarativo 'destruir' (constructor): cualquier carta en juego elegible.
   const declDestroyTargeting = useTargetingStore((s) => s.declDestroy);
+  // 'buff_aliado_4_objetivo' (Abordaje): elige un Aliado para +4 de Fuerza.
+  const buffTargeting = useTargetingStore((s) => s.buffTarget);
   const cancelTargeting = useTargetingStore((s) => s.cancel);
   const anyTargeting =
-    weakenTargeting ?? destroyTargeting ?? swapTargeting ?? equipTargeting ?? destroyAnyTargeting ?? exileAnyTargeting ?? declDestroyTargeting;
+    weakenTargeting ?? destroyTargeting ?? swapTargeting ?? equipTargeting ?? destroyAnyTargeting ?? exileAnyTargeting ?? declDestroyTargeting ?? buffTargeting;
 
   const isMyTurn = turn.currentPlayer === playerId && !isOpponent;
 
@@ -287,6 +289,8 @@ export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = '
                   ? 'ring-yellow-400'
                   : exileAnyTargeting
                   ? 'ring-purple-400'
+                  : buffTargeting
+                  ? 'ring-emerald-400'
                   : 'ring-red-400'
               }`}
             />
@@ -361,6 +365,8 @@ export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = '
                       playerId,
                       declDestroyTargeting.playerId,
                     )
+                : buffTargeting
+                ? () => buffTargetAlly(ally.instanceId, playerId, buffTargeting.playerId)
                 : () => setDetailCard(ally)
             }
             dragPayload={

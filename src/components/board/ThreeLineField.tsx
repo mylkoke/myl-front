@@ -85,8 +85,10 @@ export function ThreeLineField({ playerId, isOpponent = false }: ThreeLineFieldP
   const exileAnyTargeting = useTargetingStore((s) => s.exileAny);
   // Efecto declarativo 'destruir' (constructor).
   const declDestroyTargeting = useTargetingStore((s) => s.declDestroy);
+  // 'buff_aliado_4_objetivo' (Abordaje).
+  const buffTargeting = useTargetingStore((s) => s.buffTarget);
   const cancelTargeting = useTargetingStore((s) => s.cancel);
-  const { swapControl, destroyNonGoldCard, exileTargetCard, destroyDeclarativeTarget } = useGameActions();
+  const { swapControl, destroyNonGoldCard, exileTargetCard, destroyDeclarativeTarget, buffTargetAlly } = useGameActions();
 
   const swapWrap = (card: CardInPlay, node: React.ReactNode) => {
     if (swapTargeting) {
@@ -145,6 +147,17 @@ export function ThreeLineField({ playerId, isOpponent = false }: ThreeLineFieldP
           }
         >
           <div className="absolute -inset-1 rounded-xl ring-2 ring-red-400 animate-pulse pointer-events-none z-30" />
+          <div className="pointer-events-none">{node}</div>
+        </div>
+      );
+    }
+    if (buffTargeting && card.tipo === 'aliado') {
+      return (
+        <div
+          className="relative cursor-pointer"
+          onClick={() => buffTargetAlly(card.instanceId, playerId, buffTargeting.playerId)}
+        >
+          <div className="absolute -inset-1 rounded-xl ring-2 ring-emerald-400 animate-pulse pointer-events-none z-30" />
           <div className="pointer-events-none">{node}</div>
         </div>
       );

@@ -21,6 +21,8 @@ interface TargetingState {
   exileAny: { sourceInstanceId: string; playerId: PlayerId } | null;
   /** Active declarative "destruir" targeting (constructor): destroy a card in a line. */
   declDestroy: { sourceInstanceId: string; playerId: PlayerId; code: string } | null;
+  /** Active "buff an ally" targeting ('buff_aliado_4_objetivo', Abordaje): any ally in a line. */
+  buffTarget: { playerId: PlayerId; amount: number } | null;
   startWeaken: (sourceInstanceId: string, playerId: PlayerId) => void;
   startDestroy: (sourceInstanceId: string, playerId: PlayerId) => void;
   startSwap: (sourceInstanceId: string, playerId: PlayerId) => void;
@@ -28,10 +30,11 @@ interface TargetingState {
   startDestroyAny: (sourceInstanceId: string, playerId: PlayerId) => void;
   startExileAny: (sourceInstanceId: string, playerId: PlayerId) => void;
   startDeclDestroy: (sourceInstanceId: string, playerId: PlayerId, code: string) => void;
+  startBuffTarget: (playerId: PlayerId, amount: number) => void;
   cancel: () => void;
 }
 
-const NONE = { weaken: null, destroy: null, swap: null, equip: null, destroyAny: null, exileAny: null, declDestroy: null };
+const NONE = { weaken: null, destroy: null, swap: null, equip: null, destroyAny: null, exileAny: null, declDestroy: null, buffTarget: null };
 
 export const useTargetingStore = create<TargetingState>((set) => ({
   ...NONE,
@@ -49,5 +52,6 @@ export const useTargetingStore = create<TargetingState>((set) => ({
     set({ ...NONE, exileAny: { sourceInstanceId, playerId } }),
   startDeclDestroy: (sourceInstanceId, playerId, code) =>
     set({ ...NONE, declDestroy: { sourceInstanceId, playerId, code } }),
+  startBuffTarget: (playerId, amount) => set({ ...NONE, buffTarget: { playerId, amount } }),
   cancel: () => set({ ...NONE }),
 }));

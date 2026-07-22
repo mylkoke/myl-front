@@ -51,6 +51,9 @@ import {
   hasPlayFromGraveThenExile,
   hasMillChoiceByAllies,
   hasBounceAlliesMill,
+  playsFreeIfGold,
+  hasBuffAllyTarget,
+  BUFF_ALLY_TARGET_AMOUNT,
   totalAlliesInPlay,
   hasCombatExileAll,
   hasCombatExilePay,
@@ -403,6 +406,28 @@ function maybeTalismanBounceMill(card: Card, playerId: PlayerId): void {
   }
 }
 
+/**
+ * 'buff_aliado_4_objetivo' (Abordaje): al jugar el talismán, si hay algún Aliado
+ * en juego (ambos jugadores), inicia el targeting para elegir uno que ganará +4
+ * de Fuerza hasta la Fase Final. Sin aliados, la carta se juega sin efecto.
+ */
+function maybeTalismanBuffTarget(card: Card, playerId: PlayerId): void {
+  if (!hasBuffAllyTarget(card)) return;
+  const st = useGameStore.getState();
+  if (st.isGameOver) return;
+  const anyAlly = (['player', 'opponent'] as PlayerId[]).some((pid) =>
+    [...st.players[pid].defenseField, ...st.players[pid].attackField].some((c) => c.tipo === 'aliado'),
+  );
+  if (!anyAlly) {
+    useGameStore.getState().addLog(`${card.nombre}: no hay Aliados en juego para potenciar.`, 'system');
+    return;
+  }
+  useTargetingStore.getState().startBuffTarget(playerId, BUFF_ALLY_TARGET_AMOUNT);
+  useGameStore
+    .getState()
+    .addLog(`${card.nombre}: elige un Aliado en juego para darle +${BUFF_ALLY_TARGET_AMOUNT} de Fuerza.`, 'action');
+}
+
 function maybeSelfSummon(card: Card, playerId: PlayerId): void {
   if (card.tipo !== 'aliado' || !hasSelfSummonFromDeck(card)) return;
   const st = useGameStore.getState();
@@ -636,6 +661,11 @@ interface GameActions {
     playerId: PlayerId,
   ) => void;
   /**
+   * 'buff_aliado_4_objetivo' (Abordaje): da +4 de Fuerza (hasta la Fase Final) al
+   * Aliado objetivo elegido en el targeting.
+   */
+  buffTargetAlly: (targetInstanceId: string, targetOwnerId: PlayerId, playerId: PlayerId) => void;
+  /**
    * 'barajar_mano_roba8': resuelve la decisión — si acepta, baraja la mano
    * en el Mazo Castillo (orden aleatorio) y roba 8 cartas nuevas.
    */
@@ -821,8 +851,9 @@ export const useGameStore = create<GameStore>()(
           get().addLog(reason ?? 'No puedes jugar esa carta', 'error');
           return;
         }
-        // Coste efectivo: impreso + sobrecostes ('nombrar_tipo_sobrecoste')
-        const cost = effectiveCost(card, players);
+        // Coste efectivo: impreso + sobrecostes ('nombrar_tipo_sobrecoste').
+        // 'gratis_si_5_oros' (Abordaje): coste 0 si controla ≥5 Oros.
+        const cost = playsFreeIfGold(card, player) ? 0 : effectiveCost(card, players);
 
         const withoutCard = player.hand.filter((c) => c.instanceId !== card.instanceId);
         let updated = { ...player, hand: withoutCard };
@@ -960,6 +991,8 @@ export const useGameStore = create<GameStore>()(
         // 'devuelve_aliados_bota' (Desastre de Rancagua): devuelve todos los
         // Aliados a la mano y abre la elección de quién bota (por los devueltos).
         if (card.tipo === 'talisman') maybeTalismanBounceMill(card, playerId);
+        // 'buff_aliado_4_objetivo' (Abordaje): elige un Aliado que gana +4.
+        if (card.tipo === 'talisman') maybeTalismanBuffTarget(card, playerId);
 
         // 'barajar_mano_roba8': al entrar en juego, su dueño decide si baraja
         // su mano en el Castillo y roba 8.
@@ -2224,7 +2257,7 @@ export const useGameStore = create<GameStore>()(
         const auraCost = auraEnablesPlayFromZone(card, zone, player);
         if (!canPlayFromZone(card, zone) && auraCost === null) return;
 
-        const zoneCost = auraCost ?? effectiveCost(card, players);
+        const zoneCost = auraCost ?? (playsFreeIfGold(card, player) ? 0 : effectiveCost(card, players));
         // Mismas reglas que jugar desde la mano (turno, fase, coste, líneas).
         const { allowed, reason } = canPlayCard(card, player, turn, players, zoneCost);
         if (!allowed) {
@@ -2302,6 +2335,7 @@ export const useGameStore = create<GameStore>()(
         // Cementerio también dispara la elección de quién bota.
         if (card.tipo === 'talisman') maybeTalismanMillChoice(card, playerId);
         if (card.tipo === 'talisman') maybeTalismanBounceMill(card, playerId);
+        if (card.tipo === 'talisman') maybeTalismanBuffTarget(card, playerId);
 
         // 'barajar_mano_roba8': también aplica al entrar desde estas zonas.
         if (hasShuffleDraw(card)) {
@@ -2789,6 +2823,39 @@ export const useGameStore = create<GameStore>()(
         get().addLog(`${source.nombre}: ${player.name} destruye a ${target.nombre}.`, 'combat');
         const { isOver, winnerId } = checkGameOver(get().players);
         if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
+      },
+
+      buffTargetAlly: (targetInstanceId, targetOwnerId, playerId) => {
+        const { players, isGameOver } = get();
+        if (isGameOver) return;
+        const targeting = useTargetingStore.getState().buffTarget;
+        if (!targeting || targeting.playerId !== playerId) return;
+        const targetOwner = players[targetOwnerId];
+        const target = [...targetOwner.defenseField, ...targetOwner.attackField].find(
+          (c) => c.instanceId === targetInstanceId && c.tipo === 'aliado',
+        );
+        if (!target) return;
+        const amount = targeting.amount;
+        set((s) => {
+          const o = s.players[targetOwnerId];
+          return {
+            players: {
+              ...s.players,
+              [targetOwnerId]: {
+                ...o,
+                weaponTempBonuses: {
+                  ...o.weaponTempBonuses,
+                  [targetInstanceId]: (o.weaponTempBonuses[targetInstanceId] ?? 0) + amount,
+                },
+              },
+            },
+          };
+        });
+        useTargetingStore.getState().cancel();
+        get().addLog(
+          `${players[playerId].name}: ${target.nombre} gana +${amount} de Fuerza hasta la Fase Final.`,
+          'action',
+        );
       },
 
       resolvePatriotaTrigger: (accept, playerId) => {
