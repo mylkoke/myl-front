@@ -78,7 +78,10 @@ export type AbilityEffectKind =
   | 'habilitar_juego'
   | 'recuperar_self'
   | 'buff_fuerza'
-  | 'destruir';
+  | 'destruir'
+  | 'buff_objetivo'
+  | 'jugar_desde_zona'
+  | 'coste_gratis_condicional';
 
 export const EFFECT_LABELS: Record<AbilityEffectKind, string> = {
   mover: 'Mover / Barajar cartas',
@@ -87,6 +90,9 @@ export const EFFECT_LABELS: Record<AbilityEffectKind, string> = {
   recuperar_self: 'Recuperar / agrupar esta misma carta a otra zona',
   buff_fuerza: 'Bonificar la Fuerza de aliados (aura)',
   destruir: 'Destruir una carta en juego',
+  buff_objetivo: 'Potenciar un Aliado objetivo (+N Fuerza hasta Fase Final)',
+  jugar_desde_zona: 'Poder jugar esta carta desde otra zona',
+  coste_gratis_condicional: 'Jugar gratis si controlas X Oros',
 };
 
 /**
@@ -213,13 +219,50 @@ export interface DestroyEffect {
   scope: 'self' | 'opponent' | 'both';
 }
 
+/**
+ * Efecto "buff_objetivo" (con selección): al dispararse (p.ej. al jugar el
+ * talismán, momento `entra_juego`; o activable), el jugador elige un Aliado en
+ * juego dentro del `scope` que gana `amount` de Fuerza hasta la Fase Final
+ * (temporal, expira al terminar el turno). Ej. Abordaje: amount 4, scope both.
+ */
+export interface BuffTargetEffect {
+  kind: 'buff_objetivo';
+  amount: number;
+  scope: 'self' | 'opponent' | 'both';
+}
+
+/**
+ * Efecto "jugar_desde_zona" (propiedad pasiva): permite jugar ESTA carta desde
+ * la zona `from` (típicamente el Cementerio) como si estuviera en la Mano; si
+ * `thenExile`, tras jugarse así se destierra en vez de volver al Cementerio.
+ * (El `momento`/`modo` de la receta son irrelevantes para este efecto.)
+ */
+export interface PlayFromZoneEffect {
+  kind: 'jugar_desde_zona';
+  from: AbilityZone;
+  thenExile: boolean;
+}
+
+/**
+ * Efecto "coste_gratis_condicional" (propiedad pasiva): si el jugador controla
+ * `minGold` o más Oros (Reserva + Oro Pagado), puede jugar esta carta sin pagar
+ * su Coste (coste 0). (`momento`/`modo` irrelevantes.)
+ */
+export interface FreeCostEffect {
+  kind: 'coste_gratis_condicional';
+  minGold: number;
+}
+
 export type AbilityEffect =
   | MoveEffect
   | SummonEffect
   | EnablePlayEffect
   | RecoverSelfEffect
   | ForceBuffEffect
-  | DestroyEffect;
+  | DestroyEffect
+  | BuffTargetEffect
+  | PlayFromZoneEffect
+  | FreeCostEffect;
 
 /** Receta declarativa completa de una habilidad. */
 export interface AbilityDefinition {

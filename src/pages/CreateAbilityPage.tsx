@@ -89,6 +89,14 @@ export function CreateAbilityPage() {
   // Efecto 'destruir': tipo objetivo y de quién.
   const [destroyTargetTipo, setDestroyTargetTipo] = useState<CardType | null>(null);
   const [destroyScope, setDestroyScope] = useState<'self' | 'opponent' | 'both'>('both');
+  // Efecto 'buff_objetivo': +N Fuerza a un Aliado objetivo, y de quién.
+  const [buffObjAmount, setBuffObjAmount] = useState(4);
+  const [buffObjScope, setBuffObjScope] = useState<'self' | 'opponent' | 'both'>('both');
+  // Efecto 'jugar_desde_zona': desde qué zona y si se destierra tras jugarla.
+  const [playZoneFrom, setPlayZoneFrom] = useState<AbilityZone | null>('graveyard');
+  const [playZoneExile, setPlayZoneExile] = useState(true);
+  // Efecto 'coste_gratis_condicional': mínimo de Oros para jugar gratis.
+  const [freeMinGold, setFreeMinGold] = useState(5);
 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
@@ -111,12 +119,19 @@ export function CreateAbilityPage() {
   const isRecoverSelf = effectKind === 'recuperar_self';
   const isBuffForce = effectKind === 'buff_fuerza';
   const isDestroy = effectKind === 'destruir';
+  const isBuffObj = effectKind === 'buff_objetivo';
+  const isPlayZone = effectKind === 'jugar_desde_zona';
+  const isFreeCost = effectKind === 'coste_gratis_condicional';
+  // Efectos pasivos (propiedades): momento/modo irrelevantes.
+  const isPassive = isPlayZone || isFreeCost;
   const usesTargetFilters = effectKind === 'invocar' || isEnablePlay;
-  const needsFrom = !isRecoverSelf && !isBuffForce && !isDestroy;
-  const needsTo = !isEnablePlay && !isBuffForce && !isDestroy;
+  const needsFrom = !isRecoverSelf && !isBuffForce && !isDestroy && !isBuffObj && !isPassive;
+  const needsTo = !isEnablePlay && !isBuffForce && !isDestroy && !isBuffObj && !isPassive;
   const zonesOk =
-    isBuffForce || isDestroy
+    isBuffForce || isDestroy || isBuffObj || isFreeCost
       ? true
+      : isPlayZone
+      ? playZoneFrom !== null
       : isRecoverSelf
       ? to !== null
       : isEnablePlay
@@ -126,7 +141,7 @@ export function CreateAbilityPage() {
   const canSave =
     nombre.trim().length > 0 &&
     code.length > 0 &&
-    moments.length > 0 &&
+    (isPassive || moments.length > 0) &&
     zonesOk &&
     (effectKind !== 'mover' || countOk) &&
     !saving;
@@ -159,6 +174,18 @@ export function CreateAbilityPage() {
         ...base,
         effect: { kind: 'destruir', targetTipo: destroyTargetTipo, scope: destroyScope },
       };
+    }
+    if (effectKind === 'buff_objetivo') {
+      return { ...base, effect: { kind: 'buff_objetivo', amount: buffObjAmount, scope: buffObjScope } };
+    }
+    if (effectKind === 'jugar_desde_zona') {
+      return {
+        ...base,
+        effect: { kind: 'jugar_desde_zona', from: playZoneFrom as AbilityZone, thenExile: playZoneExile },
+      };
+    }
+    if (effectKind === 'coste_gratis_condicional') {
+      return { ...base, effect: { kind: 'coste_gratis_condicional', minGold: Math.max(0, freeMinGold) } };
     }
     if (effectKind === 'invocar') {
       return {
@@ -242,6 +269,11 @@ export function CreateAbilityPage() {
       setBuffExcludeSelf(true);
       setDestroyTargetTipo(null);
       setDestroyScope('both');
+      setBuffObjAmount(4);
+      setBuffObjScope('both');
+      setPlayZoneFrom('graveyard');
+      setPlayZoneExile(true);
+      setFreeMinGold(5);
     } catch (err) {
       const text =
         err instanceof ApiError
@@ -285,6 +317,21 @@ export function CreateAbilityPage() {
         destroyScope === 'opponent' ? 'del rival' : destroyScope === 'self' ? 'propia' : 'de cualquier jugador';
       return `${when}:${costText} ${modeText} destruir ${queTipo} en juego ${deQuien}.`;
     }
+    if (isBuffObj) {
+      const deQuien =
+        buffObjScope === 'opponent' ? 'del rival' : buffObjScope === 'self' ? 'propio' : 'de cualquier jugador';
+      return `${when}: elige un Aliado en juego ${deQuien} que gana +${buffObjAmount} de Fuerza hasta la Fase Final.`;
+    }
+    if (isPlayZone) {
+      return playZoneFrom === null
+        ? null
+        : `Puedes jugar esta carta desde ${ZONE_LABELS[playZoneFrom]} como si estuviera en tu Mano${
+            playZoneExile ? '; al hacerlo, se destierra' : ''
+          }.`;
+    }
+    if (isFreeCost) {
+      return `Si controlas ${Math.max(0, freeMinGold)} o más Oros (Reserva + Oro Pagado), puedes jugar esta carta sin pagar su Coste.`;
+    }
     if (isEnablePlay) {
       const filtro = [
         summonRaza.trim() ? `raza ${summonRaza.trim()}` : null,
@@ -319,6 +366,7 @@ export function CreateAbilityPage() {
     isEnablePlay, isRecoverSelf, isBuffForce, isDestroy, needsFrom, needsTo, costReduce, minCoste,
     buffTargetRaza, buffCountRaza, buffAmount, buffScope, buffExcludeSelf,
     destroyTargetTipo, destroyScope,
+    isBuffObj, isPlayZone, isFreeCost, buffObjAmount, buffObjScope, playZoneFrom, playZoneExile, freeMinGold,
   ]);
 
   return (
@@ -559,6 +607,90 @@ export function CreateAbilityPage() {
                   />
                 </div>
               </>
+            )}
+
+            {isBuffObj && (
+              <>
+                <p className="text-[11px] text-slate-400">
+                  Al dispararse (p.ej. al entrar en juego), el jugador elige un Aliado en juego que
+                  gana el bono de Fuerza hasta la Fase Final. Úsalo con el momento "Al entrar en juego".
+                </p>
+                <div className="flex gap-4">
+                  <div>
+                    <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1">
+                      +Fuerza al Aliado
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={buffObjAmount === 0 ? '' : String(buffObjAmount)}
+                      placeholder="4"
+                      onChange={(e) => setBuffObjAmount(Number(e.target.value.replace(/\D/g, '')) || 0)}
+                      className={`${inputCls} w-24`}
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1.5">
+                      ¿Qué Aliado puede ser?
+                    </label>
+                    <LabelPicker
+                      tone="emerald"
+                      value={buffObjScope}
+                      onChange={setBuffObjScope}
+                      options={[
+                        { value: 'both', label: 'De cualquier jugador' },
+                        { value: 'self', label: 'Solo tuyo' },
+                        { value: 'opponent', label: 'Solo del rival' },
+                      ]}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {isPlayZone && (
+              <>
+                <p className="text-[11px] text-slate-400">
+                  Propiedad pasiva: permite jugar ESTA carta desde la zona indicada como si estuviera
+                  en tu Mano. (El momento/modo no aplican.)
+                </p>
+                <div>
+                  <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1.5">
+                    ¿Desde qué zona se puede jugar?
+                  </label>
+                  <LabelPicker tone="amber" value={playZoneFrom} onChange={setPlayZoneFrom} options={ZONE_OPTIONS} />
+                </div>
+                <label className="flex items-center gap-2 text-xs text-slate-300 select-none rounded-md px-3 py-2 border border-slate-700 bg-slate-800/60 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={playZoneExile}
+                    onChange={(e) => setPlayZoneExile(e.target.checked)}
+                  />
+                  Al jugarla así, desterrarla (en vez de volver al Cementerio)
+                </label>
+              </>
+            )}
+
+            {isFreeCost && (
+              <div>
+                <p className="text-[11px] text-slate-400 mb-2">
+                  Propiedad pasiva: si controlas X o más Oros (Reserva + Oro Pagado), esta carta se
+                  juega sin pagar su Coste. (El momento/modo no aplican.)
+                </p>
+                <label className="text-[10px] uppercase tracking-wide text-slate-500 block mb-1">
+                  Oros mínimos para jugar gratis
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={freeMinGold === 0 ? '' : String(freeMinGold)}
+                  placeholder="5"
+                  onChange={(e) => setFreeMinGold(Number(e.target.value.replace(/\D/g, '')) || 0)}
+                  className={`${inputCls} w-24`}
+                />
+              </div>
             )}
             {/* Origen: mover / invocar / habilitar_juego (no recuperar_self) */}
             {needsFrom && (

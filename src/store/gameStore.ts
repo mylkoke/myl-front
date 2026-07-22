@@ -10,6 +10,7 @@ import {
   auraEnablesPlayFromZone,
   getAnnulRecover,
   getFaseFinalSelfMove,
+  getDeclBuffTargetOnEnter,
 } from '@/utils/abilityRegistry';
 import {
   runAbilityDefinition,
@@ -52,8 +53,6 @@ import {
   hasMillChoiceByAllies,
   hasBounceAlliesMill,
   playsFreeIfGold,
-  hasBuffAllyTarget,
-  BUFF_ALLY_TARGET_AMOUNT,
   totalAlliesInPlay,
   hasCombatExileAll,
   hasCombatExilePay,
@@ -407,25 +406,30 @@ function maybeTalismanBounceMill(card: Card, playerId: PlayerId): void {
 }
 
 /**
- * 'buff_aliado_4_objetivo' (Abordaje): al jugar el talismán, si hay algún Aliado
- * en juego (ambos jugadores), inicia el targeting para elegir uno que ganará +4
- * de Fuerza hasta la Fase Final. Sin aliados, la carta se juega sin efecto.
+ * Efecto declarativo `buff_objetivo` al entrar en juego (constructor): si la
+ * carta lo tiene y hay algún Aliado elegible en el ámbito, inicia el targeting
+ * para elegir uno que ganará +N de Fuerza hasta la Fase Final. Sirve a cualquier
+ * carta (talismán/aliado). Ej. Abordaje: +4, scope both.
  */
-function maybeTalismanBuffTarget(card: Card, playerId: PlayerId): void {
-  if (!hasBuffAllyTarget(card)) return;
+function maybeBuffTargetOnEnter(card: Card, playerId: PlayerId): void {
+  const buff = getDeclBuffTargetOnEnter(card);
+  if (!buff) return;
   const st = useGameStore.getState();
   if (st.isGameOver) return;
-  const anyAlly = (['player', 'opponent'] as PlayerId[]).some((pid) =>
+  const opponentId: PlayerId = playerId === 'player' ? 'opponent' : 'player';
+  const pids: PlayerId[] =
+    buff.scope === 'self' ? [playerId] : buff.scope === 'opponent' ? [opponentId] : [playerId, opponentId];
+  const anyAlly = pids.some((pid) =>
     [...st.players[pid].defenseField, ...st.players[pid].attackField].some((c) => c.tipo === 'aliado'),
   );
   if (!anyAlly) {
-    useGameStore.getState().addLog(`${card.nombre}: no hay Aliados en juego para potenciar.`, 'system');
+    useGameStore.getState().addLog(`${card.nombre}: no hay Aliados elegibles para potenciar.`, 'system');
     return;
   }
-  useTargetingStore.getState().startBuffTarget(playerId, BUFF_ALLY_TARGET_AMOUNT);
+  useTargetingStore.getState().startBuffTarget(playerId, buff.amount, buff.scope);
   useGameStore
     .getState()
-    .addLog(`${card.nombre}: elige un Aliado en juego para darle +${BUFF_ALLY_TARGET_AMOUNT} de Fuerza.`, 'action');
+    .addLog(`${card.nombre}: elige un Aliado para darle +${buff.amount} de Fuerza.`, 'action');
 }
 
 function maybeSelfSummon(card: Card, playerId: PlayerId): void {
@@ -991,8 +995,6 @@ export const useGameStore = create<GameStore>()(
         // 'devuelve_aliados_bota' (Desastre de Rancagua): devuelve todos los
         // Aliados a la mano y abre la elección de quién bota (por los devueltos).
         if (card.tipo === 'talisman') maybeTalismanBounceMill(card, playerId);
-        // 'buff_aliado_4_objetivo' (Abordaje): elige un Aliado que gana +4.
-        if (card.tipo === 'talisman') maybeTalismanBuffTarget(card, playerId);
 
         // 'barajar_mano_roba8': al entrar en juego, su dueño decide si baraja
         // su mano en el Castillo y roba 8.
@@ -1040,6 +1042,7 @@ export const useGameStore = create<GameStore>()(
         maybeSelfSummon(card, playerId);
         maybeRegroup3OnEnter(card, playerId);
         runDeclarativeAbilities(card, playerId, 'entra_juego');
+        maybeBuffTargetOnEnter(card, playerId);
 
         // 'busca_copia_entra' (Escudo Nacional Mercenario): al entrar, si hay
         // copias de esta misma carta en el Castillo o Cementerio, abrir la
@@ -2335,7 +2338,6 @@ export const useGameStore = create<GameStore>()(
         // Cementerio también dispara la elección de quién bota.
         if (card.tipo === 'talisman') maybeTalismanMillChoice(card, playerId);
         if (card.tipo === 'talisman') maybeTalismanBounceMill(card, playerId);
-        if (card.tipo === 'talisman') maybeTalismanBuffTarget(card, playerId);
 
         // 'barajar_mano_roba8': también aplica al entrar desde estas zonas.
         if (hasShuffleDraw(card)) {
@@ -2347,6 +2349,7 @@ export const useGameStore = create<GameStore>()(
         maybeSelfSummon(card, playerId);
         maybeRegroup3OnEnter(card, playerId);
         runDeclarativeAbilities(card, playerId, 'entra_juego');
+        maybeBuffTargetOnEnter(card, playerId);
         set((s) => ({ players: reapplyCostOneSuppression(s.players) }));
       },
 
@@ -2830,6 +2833,9 @@ export const useGameStore = create<GameStore>()(
         if (isGameOver) return;
         const targeting = useTargetingStore.getState().buffTarget;
         if (!targeting || targeting.playerId !== playerId) return;
+        // Ámbito del objetivo.
+        if (targeting.scope === 'opponent' && targetOwnerId === playerId) return;
+        if (targeting.scope === 'self' && targetOwnerId !== playerId) return;
         const targetOwner = players[targetOwnerId];
         const target = [...targetOwner.defenseField, ...targetOwner.attackField].find(
           (c) => c.instanceId === targetInstanceId && c.tipo === 'aliado',

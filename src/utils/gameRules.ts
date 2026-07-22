@@ -1,6 +1,6 @@
 import type { CardInPlay, Card } from '@/types/card.types';
 import type { PlayerId, PlayerState, TurnState } from '@/types/game.types';
-import { getDeclarativeForceBuff } from '@/utils/abilityRegistry';
+import { getDeclarativeForceBuff, getDeclPlayFromZone, getDeclFreeCostMinGold } from '@/utils/abilityRegistry';
 
 export const INITIAL_HAND_SIZE = 5;
 export const MAX_GOLD_CARDS    = 15;
@@ -525,13 +525,18 @@ export function hasDesdeCementerio(card: Card): boolean {
  * resolverse se DESTIERRA en vez de volver al Cementerio (evita el reciclado).
  */
 export function hasPlayFromGraveThenExile(card: Card): boolean {
-  return card.habilidadesEspeciales?.includes('desde_cementerio_destierro') ?? false;
+  if (card.habilidadesEspeciales?.includes('desde_cementerio_destierro')) return true;
+  // Versión declarativa del constructor ('jugar_desde_zona' con thenExile).
+  const decl = getDeclPlayFromZone(card);
+  return decl?.from === 'graveyard' && decl.thenExile;
 }
 
 /** ¿Puede `card` jugarse desde `zone`? ('jugar_desde_cementerio' cubre
- *  Cementerio y Destierro; 'desde_cementerio'/'..._destierro' solo Cementerio). */
+ *  Cementerio y Destierro; 'desde_cementerio'/'..._destierro' solo Cementerio;
+ *  el efecto declarativo 'jugar_desde_zona' cubre la zona configurada). */
 export function canPlayFromZone(card: Card, zone: 'graveyard' | 'exile'): boolean {
   if (hasPlayFromGraveyard(card)) return true;
+  if (getDeclPlayFromZone(card)?.from === zone) return true;
   return zone === 'graveyard' && (hasDesdeCementerio(card) || hasPlayFromGraveThenExile(card));
 }
 
@@ -555,20 +560,11 @@ export function hasFreeIfGold(card: Card): boolean {
   return card.habilidadesEspeciales?.includes('gratis_si_5_oros') ?? false;
 }
 
-/** ¿`card` se juega gratis para `player` por 'gratis_si_5_oros'? */
+/** ¿`card` se juega gratis para `player`? (keyword 'gratis_si_5_oros' o efecto
+ *  declarativo 'coste_gratis_condicional'). Cuenta Reserva + Oro Pagado. */
 export function playsFreeIfGold(card: Card, player: PlayerState): boolean {
-  return hasFreeIfGold(card) && player.gold.length + player.goldPaid.length >= FREE_IF_GOLD_MIN;
-}
-
-/** +Fuerza temporal que otorga 'buff_aliado_4_objetivo' (Abordaje) al objetivo. */
-export const BUFF_ALLY_TARGET_AMOUNT = 4;
-
-/**
- * 'buff_aliado_4_objetivo' (Abordaje): al jugarse, el dueño elige un Aliado en
- * juego (de cualquier jugador) que gana +4 de Fuerza hasta la Fase Final.
- */
-export function hasBuffAllyTarget(card: Card): boolean {
-  return card.habilidadesEspeciales?.includes('buff_aliado_4_objetivo') ?? false;
+  const min = hasFreeIfGold(card) ? FREE_IF_GOLD_MIN : getDeclFreeCostMinGold(card);
+  return min != null && player.gold.length + player.goldPaid.length >= min;
 }
 
 /**

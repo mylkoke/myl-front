@@ -83,6 +83,41 @@ export function getDeclarativeForceBuff(
 }
 
 /**
+ * Efecto declarativo `jugar_desde_zona` de una carta (propiedad pasiva): permite
+ * jugarla desde la zona `from`; si `thenExile`, se destierra tras jugarse así.
+ */
+export function getDeclPlayFromZone(card: Card): { from: AbilityZone; thenExile: boolean } | null {
+  for (const { def } of getDeclarativeAbilitiesOf(card)) {
+    if (def.effect.kind === 'jugar_desde_zona') {
+      return { from: def.effect.from, thenExile: def.effect.thenExile };
+    }
+  }
+  return null;
+}
+
+/** Mínimo de Oros de un efecto declarativo `coste_gratis_condicional` (o null). */
+export function getDeclFreeCostMinGold(card: Card): number | null {
+  for (const { def } of getDeclarativeAbilitiesOf(card)) {
+    if (def.effect.kind === 'coste_gratis_condicional') return Math.max(0, def.effect.minGold);
+  }
+  return null;
+}
+
+/**
+ * Efecto declarativo `buff_objetivo` disparado al entrar en juego (momento
+ * `entra_juego`): `amount` de Fuerza + `scope`, o null. Usado para iniciar el
+ * targeting de potenciar un Aliado al jugar la carta.
+ */
+export function getDeclBuffTargetOnEnter(card: Card): { amount: number; scope: 'self' | 'opponent' | 'both' } | null {
+  for (const { def } of getDeclarativeAbilitiesOf(card)) {
+    if (def.effect.kind === 'buff_objetivo' && def.moments.includes('entra_juego')) {
+      return { amount: def.effect.amount, scope: def.effect.scope };
+    }
+  }
+  return null;
+}
+
+/**
  * ¿La carta tiene una habilidad declarativa activable en la Fase Final que la
  * agrupe a sí misma (`recuperar_self` con momento `fase_final`)? Devuelve la zona
  * destino (típicamente la Línea de Defensa) o `null`. Usado para abrir el modal
