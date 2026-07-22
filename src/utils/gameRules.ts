@@ -61,6 +61,12 @@ export function canPlayCard(
     return { allowed: true };
   }
 
+  // 'destierra_aliado_roba' (Escape): sin un Aliado desterrable en mesa no hay
+  // objetivo válido → la carta es injugable.
+  if (hasExileAllyDraw(card) && players && !exileableAllyExists(players)) {
+    return { allowed: false, reason: 'No hay ningún Aliado en juego para desterrar' };
+  }
+
   // Los talismanes pueden pagarse también con oros virtuales 'oro_talismanes'.
   const available =
     card.tipo === 'talisman' ? player.goldCount + player.talismanGold : player.goldCount;
@@ -547,6 +553,56 @@ export function canPlayFromZone(card: Card, zone: 'graveyard' | 'exile'): boolea
  */
 export function hasMillChoiceByAllies(card: Card): boolean {
   return card.habilidadesEspeciales?.includes('bota_aliados_elige_jugador') ?? false;
+}
+
+/**
+ * "Réplica X" (keyword genérica, `replica_<N>`): al jugar la carta, su dueño
+ * PUEDE pagar N Oros extra para que su efecto se resuelva DOS veces (una sola
+ * vez, no acumulable). Devuelve N (coste de Réplica) o null si no tiene Réplica.
+ */
+export function replicaCost(card: Card): number | null {
+  for (const code of card.habilidadesEspeciales ?? []) {
+    const m = /^replica_(\d+)$/.exec(code);
+    if (m) return Number(m[1]);
+  }
+  return null;
+}
+
+/** 'replica_gratis_si_5_oros' (Escape): el Coste de Réplica es 0 si controlas ≥5 Oros. */
+export function hasReplicaFreeIfGold(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('replica_gratis_si_5_oros') ?? false;
+}
+
+/** Coste de Réplica efectivo para `player` (0 si `replica_gratis_si_5_oros` y ≥5 Oros). */
+export function effectiveReplicaCost(card: Card, player: PlayerState): number | null {
+  const base = replicaCost(card);
+  if (base == null) return null;
+  if (hasReplicaFreeIfGold(card) && player.gold.length + player.goldPaid.length >= FREE_IF_GOLD_MIN) return 0;
+  return base;
+}
+
+/**
+ * 'destierra_aliado_roba' (Escape): al jugarse, destierra un Aliado en juego
+ * (cualquier jugador; respeta indesterrable/no_sale/solo_sale_combate) y luego
+ * roba 1 carta. Requiere un Aliado desterrable en mesa (si no, la carta es
+ * injugable); con Réplica el efecto ocurre dos veces.
+ */
+export function hasExileAllyDraw(card: Card): boolean {
+  return card.habilidadesEspeciales?.includes('destierra_aliado_roba') ?? false;
+}
+
+/** ¿`c` es un Aliado que puede ser desterrado? (respeta las protecciones). */
+export function isExileableAlly(c: CardInPlay): boolean {
+  return (
+    c.tipo === 'aliado' && !hasIndesterrable(c) && !cannotLeavePlay(c) && !hasCombatOnlyExit(c)
+  );
+}
+
+/** ¿Existe algún Aliado desterrable en juego (ambos jugadores)? */
+export function exileableAllyExists(players: Record<PlayerId, PlayerState>): boolean {
+  return Object.values(players).some((p) =>
+    [...p.defenseField, ...p.attackField].some(isExileableAlly),
+  );
 }
 
 /** Oros mínimos (Reserva + Oro Pagado) para jugar gratis con 'gratis_si_5_oros'. */

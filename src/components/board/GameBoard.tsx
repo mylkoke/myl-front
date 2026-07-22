@@ -55,6 +55,7 @@ export function GameBoard() {
   const exileAnyTargeting = useTargetingStore((s) => s.exileAny);
   const declDestroyTargeting = useTargetingStore((s) => s.declDestroy);
   const buffTargeting = useTargetingStore((s) => s.buffTarget);
+  const exileAllyDrawTargeting = useTargetingStore((s) => s.exileAllyDraw);
   const cancelTargeting = useTargetingStore((s) => s.cancel);
   const pendingDiscard = useGameStore((s) => s.pendingDiscard);
   const pendingHandDiscard = useGameStore((s) => s.pendingHandDiscard);
@@ -64,12 +65,13 @@ export function GameBoard() {
   const pendingAnnulRecover = useGameStore((s) => s.pendingAnnulRecover);
   const pendingSelfRegroup = useGameStore((s) => s.pendingSelfRegroup);
   const pendingMillChoice = useGameStore((s) => s.pendingMillChoice);
+  const pendingReplicaChoice = useGameStore((s) => s.pendingReplicaChoice);
   const responseWindow = useGameStore((s) => s.responseWindow);
   const { discardFromHand, respondWithAnnul, passResponse, closeResponseWindow, resolveShuffleChoice,
     resolveSwapChoice, resolveTypeChoice, resolvePatriotaTrigger, pickPatriotaGraveyardCard,
     discardRivalTalisman, tutorCopyFromZone, cancelCopyTutor,
     resolveSelfSummon, cancelSelfSummon, resolveFinalDraw, resolveAnnulRecover, resolveSelfRegroup,
-    resolveMillChoice,
+    resolveMillChoice, resolveReplicaChoice,
     playCard: playCardAction } = useGameActions();
   const pendingSwapChoice = useGameStore((s) => s.pendingSwapChoice);
   const pendingTypeChoice = useGameStore((s) => s.pendingTypeChoice);
@@ -830,6 +832,35 @@ export function GameBoard() {
         );
       })()}
 
+      {pendingReplicaChoice && (!isOnline || mySeat === pendingReplicaChoice.playerId) && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
+          <div className="w-full max-w-sm bg-slate-900 border border-sky-500/40 rounded-2xl p-4 sm:p-6 shadow-2xl text-center">
+            <div className="text-sky-300 text-xs uppercase tracking-widest font-bold">
+              {pendingReplicaChoice.cardName} — Réplica
+            </div>
+            <p className="text-slate-300 text-sm mt-2 mb-4">
+              ¿Pagar {pendingReplicaChoice.cost} Oro(s) de Réplica para que el efecto se resuelva dos veces?
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="primary"
+                fullWidth
+                onClick={() => resolveReplicaChoice(true, pendingReplicaChoice.playerId)}
+              >
+                Sí, Réplica ({pendingReplicaChoice.cost})
+              </Button>
+              <Button
+                variant="secondary"
+                fullWidth
+                onClick={() => resolveReplicaChoice(false, pendingReplicaChoice.playerId)}
+              >
+                No
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {pendingSelfRegroup && (!isOnline || mySeat === pendingSelfRegroup.playerId) && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
           <div className="w-full max-w-sm bg-slate-900 border border-sky-500/40 rounded-2xl p-4 sm:p-6 shadow-2xl text-center">
@@ -1021,13 +1052,13 @@ export function GameBoard() {
       )}
 
       {/* ── Targeting banner: eligiendo objetivo (debilitar / destruir / desterrar / potenciar) ── */}
-      {(weakenTargeting || destroyTargeting || destroyAnyTargeting || exileAnyTargeting || declDestroyTargeting || buffTargeting) && (
+      {(weakenTargeting || destroyTargeting || destroyAnyTargeting || exileAnyTargeting || declDestroyTargeting || buffTargeting || exileAllyDrawTargeting) && (
         <div
           className={`absolute top-14 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 border rounded-full px-4 py-2 flex items-center gap-3 shadow-xl ${
-            exileAnyTargeting ? 'border-purple-500/50' : buffTargeting ? 'border-emerald-500/50' : 'border-red-500/50'
+            exileAnyTargeting || exileAllyDrawTargeting ? 'border-purple-500/50' : buffTargeting ? 'border-emerald-500/50' : 'border-red-500/50'
           }`}
         >
-          <span className={`text-xs font-bold ${exileAnyTargeting ? 'text-purple-300' : buffTargeting ? 'text-emerald-300' : 'text-red-300'}`}>
+          <span className={`text-xs font-bold ${exileAnyTargeting || exileAllyDrawTargeting ? 'text-purple-300' : buffTargeting ? 'text-emerald-300' : 'text-red-300'}`}>
             {weakenTargeting
               ? 'Elige un aliado: tendrá Fuerza 0 hasta la Fase Final'
               : destroyTargeting
@@ -1038,6 +1069,8 @@ export function GameBoard() {
               ? 'Elige una carta en juego: pagas 2 Oros y será desterrada'
               : declDestroyTargeting
               ? 'Elige una carta en juego: será destruida'
+              : exileAllyDrawTargeting
+              ? `Elige un Aliado: será desterrado y robas 1${exileAllyDrawTargeting.remaining > 1 ? ` (Réplica: ${exileAllyDrawTargeting.remaining} restantes)` : ''}`
               : `Elige un Aliado: gana +${buffTargeting?.amount ?? 4} de Fuerza hasta la Fase Final`}
           </span>
           <button

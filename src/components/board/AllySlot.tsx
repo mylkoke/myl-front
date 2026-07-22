@@ -50,7 +50,7 @@ export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = '
   const [deckSearchOpen, setDeckSearchOpen] = useState(false);
   const { equipWeapon, summonCaudilloFromDeck, weakenAlly, millDestroyAlly, swapControl,
     playRecycledTalisman, activateMillGold, chooseRaceSuppress, equipWeaponFromZone,
-    destroyNonGoldCard, exileTargetCard, destroyDeclarativeTarget, buffTargetAlly, activateDeclarativeAbility, summonDeclarativeFromZone } = useGameActions();
+    destroyNonGoldCard, exileTargetCard, destroyDeclarativeTarget, buffTargetAlly, exileAllyDrawTarget, activateDeclarativeAbility, summonDeclarativeFromZone } = useGameActions();
   const [recycleOpen, setRecycleOpen] = useState(false);
   const [razaPickerOpen, setRazaPickerOpen] = useState(false);
   // Habilidad declarativa 'invocar' con selección en curso (o null).
@@ -89,9 +89,11 @@ export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = '
   const declDestroyTargeting = useTargetingStore((s) => s.declDestroy);
   // 'buff_aliado_4_objetivo' (Abordaje): elige un Aliado para +4 de Fuerza.
   const buffTargeting = useTargetingStore((s) => s.buffTarget);
+  // 'destierra_aliado_roba' (Escape): elige un Aliado para desterrar + robar.
+  const exileAllyDrawTargeting = useTargetingStore((s) => s.exileAllyDraw);
   const cancelTargeting = useTargetingStore((s) => s.cancel);
   const anyTargeting =
-    weakenTargeting ?? destroyTargeting ?? swapTargeting ?? equipTargeting ?? destroyAnyTargeting ?? exileAnyTargeting ?? declDestroyTargeting ?? buffTargeting;
+    weakenTargeting ?? destroyTargeting ?? swapTargeting ?? equipTargeting ?? destroyAnyTargeting ?? exileAnyTargeting ?? declDestroyTargeting ?? buffTargeting ?? exileAllyDrawTargeting;
 
   const isMyTurn = turn.currentPlayer === playerId && !isOpponent;
 
@@ -291,6 +293,8 @@ export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = '
                   ? 'ring-purple-400'
                   : buffTargeting
                   ? 'ring-emerald-400'
+                  : exileAllyDrawTargeting
+                  ? 'ring-rose-400'
                   : 'ring-red-400'
               }`}
             />
@@ -367,6 +371,8 @@ export function AllySlot({ ally, weapons, playerId, isOpponent = false, size = '
                     )
                 : buffTargeting
                 ? () => buffTargetAlly(ally.instanceId, playerId, buffTargeting.playerId)
+                : exileAllyDrawTargeting
+                ? () => exileAllyDrawTarget(ally.instanceId, playerId, exileAllyDrawTargeting.playerId)
                 : () => setDetailCard(ally)
             }
             dragPayload={

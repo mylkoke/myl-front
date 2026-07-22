@@ -53,6 +53,10 @@ import {
   hasMillChoiceByAllies,
   hasBounceAlliesMill,
   playsFreeIfGold,
+  hasExileAllyDraw,
+  effectiveReplicaCost,
+  isExileableAlly,
+  exileableAllyExists,
   totalAlliesInPlay,
   hasCombatExileAll,
   hasCombatExilePay,
@@ -406,6 +410,29 @@ function maybeTalismanBounceMill(card: Card, playerId: PlayerId): void {
 }
 
 /**
+ * 'destierra_aliado_roba' (Escape): al jugar el talismán, ofrece la decisión de
+ * Réplica (pagar N Oros para duplicar) si la carta la tiene y el jugador puede
+ * pagarla; si no, inicia directamente el destierro+robo con 1 resolución. El
+ * efecto en sí lo resuelve el targeting `exileAllyDraw` (ver `exileAllyDrawTarget`).
+ */
+function maybeTalismanReplicaExileDraw(card: Card, playerId: PlayerId): void {
+  if (!hasExileAllyDraw(card)) return;
+  const st = useGameStore.getState();
+  if (st.isGameOver) return;
+  const player = st.players[playerId];
+  const replica = effectiveReplicaCost(card, player);
+  if (replica != null && player.goldCount >= replica) {
+    useGameStore.setState({
+      pendingReplicaChoice: { playerId, cardName: card.nombre, cost: replica },
+    });
+    return;
+  }
+  // Sin Réplica (o sin oro para pagarla): una sola resolución.
+  useTargetingStore.getState().startExileAllyDraw(playerId, 1);
+  useGameStore.getState().addLog(`${card.nombre}: elige un Aliado en juego para desterrar.`, 'action');
+}
+
+/**
  * Efecto declarativo `buff_objetivo` al entrar en juego (constructor): si la
  * carta lo tiene y hay algún Aliado elegible en el ámbito, inicia el targeting
  * para elegir uno que ganará +N de Fuerza hasta la Fase Final. Sirve a cualquier
@@ -503,6 +530,7 @@ export function buildInitialState(
     pendingAnnulRecover: null,
     pendingSelfRegroup: null,
     pendingMillChoice: null,
+    pendingReplicaChoice: null,
     responseWindow: null,
     fxLightning: null,
     gameLog: [
@@ -790,6 +818,16 @@ interface GameActions {
    * bota las `count` cartas del Castillo (tantas como Aliados en juego).
    */
   resolveMillChoice: (targetPlayerId: PlayerId, playerId: PlayerId) => void;
+  /**
+   * "Réplica X" (Escape): resuelve la decisión de pagar N Oros para duplicar el
+   * efecto. Tras decidir, inicia el destierro+robo con 1 o 2 resoluciones.
+   */
+  resolveReplicaChoice: (accept: boolean, playerId: PlayerId) => void;
+  /**
+   * 'destierra_aliado_roba' (Escape): destierra el Aliado objetivo y roba 1; si
+   * quedan resoluciones (Réplica) y hay Aliados, continúa el targeting.
+   */
+  exileAllyDrawTarget: (targetInstanceId: string, targetOwnerId: PlayerId, playerId: PlayerId) => void;
   /** Replace the whole game state (online sync). */
   hydrateState: (state: GameState) => void;
   addLog: (msg: string, type?: GameLogEntry['type']) => void;
@@ -995,6 +1033,8 @@ export const useGameStore = create<GameStore>()(
         // 'devuelve_aliados_bota' (Desastre de Rancagua): devuelve todos los
         // Aliados a la mano y abre la elección de quién bota (por los devueltos).
         if (card.tipo === 'talisman') maybeTalismanBounceMill(card, playerId);
+        // 'destierra_aliado_roba' (Escape): Réplica + destierro con robo.
+        if (card.tipo === 'talisman') maybeTalismanReplicaExileDraw(card, playerId);
 
         // 'barajar_mano_roba8': al entrar en juego, su dueño decide si baraja
         // su mano en el Castillo y roba 8.
@@ -2338,6 +2378,7 @@ export const useGameStore = create<GameStore>()(
         // Cementerio también dispara la elección de quién bota.
         if (card.tipo === 'talisman') maybeTalismanMillChoice(card, playerId);
         if (card.tipo === 'talisman') maybeTalismanBounceMill(card, playerId);
+        if (card.tipo === 'talisman') maybeTalismanReplicaExileDraw(card, playerId);
 
         // 'barajar_mano_roba8': también aplica al entrar desde estas zonas.
         if (hasShuffleDraw(card)) {
@@ -3267,6 +3308,96 @@ export const useGameStore = create<GameStore>()(
           };
         });
         get().addLog(`${sourceName}: ${targetName} bota ${n} carta(s) del Castillo al Cementerio.`, 'action');
+        const { isOver, winnerId } = checkGameOver(get().players);
+        if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
+      },
+
+      resolveReplicaChoice: (accept, playerId) => {
+        const { pendingReplicaChoice, players } = get();
+        if (!pendingReplicaChoice || pendingReplicaChoice.playerId !== playerId) return;
+        const { cardName, cost } = pendingReplicaChoice;
+        const player = players[playerId];
+        // Al aceptar, paga el Coste de Réplica (Oros de la Reserva → Oro Pagado).
+        if (accept && cost > 0 && player.goldCount >= cost) {
+          const paid = player.gold.slice(player.gold.length - cost);
+          const remainingGold = player.gold.slice(0, player.gold.length - cost);
+          set((s) => ({
+            players: {
+              ...s.players,
+              [playerId]: {
+                ...s.players[playerId],
+                gold: remainingGold,
+                goldPaid: [...s.players[playerId].goldPaid, ...paid],
+                goldCount: remainingGold.length,
+                goldSpentThisTurn: true,
+              },
+            },
+          }));
+        }
+        set({ pendingReplicaChoice: null });
+        const resolutions = accept ? 2 : 1;
+        get().addLog(
+          accept
+            ? `${cardName}: Réplica pagada (${cost} Oros) — el efecto se resuelve dos veces.`
+            : `${cardName}: sin Réplica.`,
+          'action',
+        );
+        useTargetingStore.getState().startExileAllyDraw(playerId, resolutions);
+        get().addLog(`${cardName}: elige un Aliado en juego para desterrar.`, 'action');
+      },
+
+      exileAllyDrawTarget: (targetInstanceId, targetOwnerId, playerId) => {
+        const { players, isGameOver } = get();
+        if (isGameOver) return;
+        const targeting = useTargetingStore.getState().exileAllyDraw;
+        if (!targeting || targeting.playerId !== playerId) return;
+        const targetOwner = players[targetOwnerId];
+        const target = [...targetOwner.defenseField, ...targetOwner.attackField].find(
+          (c) => c.instanceId === targetInstanceId,
+        );
+        // Respeta protecciones: si no es desterrable, se mantiene el targeting.
+        if (!target || !isExileableAlly(target)) {
+          get().addLog('Ese Aliado no puede ser desterrado.', 'error');
+          return;
+        }
+        set((s) => {
+          const o = s.players[targetOwnerId];
+          const weapons = weaponsOf(o, targetInstanceId);
+          const restWeapons = { ...o.equippedWeapons };
+          delete restWeapons[targetInstanceId];
+          const ownerPatch: PlayerState = {
+            ...o,
+            defenseField: o.defenseField.filter((c) => c.instanceId !== targetInstanceId),
+            attackField: o.attackField.filter((c) => c.instanceId !== targetInstanceId),
+            exile: [...o.exile, target],
+            graveyard: [...o.graveyard, ...weapons], // armas equipadas → cementerio
+            equippedWeapons: restWeapons,
+            weakenedAllies: o.weakenedAllies.filter((id) => id !== targetInstanceId),
+          };
+          // "Luego, roba una carta": el dueño de Escape roba 1 del Castillo.
+          const players2 = { ...s.players, [targetOwnerId]: ownerPatch };
+          const p = players2[playerId];
+          if (p.deck.length > 0) {
+            const { drawn, remaining } = drawCards(p.deck, 1);
+            players2[playerId] = {
+              ...p,
+              deck: remaining,
+              hand: [...p.hand, createCardInPlay(drawn[0])],
+              life: remaining.length,
+            };
+          }
+          return { players: players2 };
+        });
+        get().addLog(`${players[playerId].name} destierra a ${target.nombre} y roba 1 carta.`, 'combat');
+
+        // ¿Quedan resoluciones (Réplica) y hay Aliados desterrables?
+        const remaining = targeting.remaining - 1;
+        if (remaining > 0 && exileableAllyExists(get().players)) {
+          useTargetingStore.getState().startExileAllyDraw(playerId, remaining);
+          get().addLog('Réplica: elige otro Aliado para desterrar.', 'action');
+        } else {
+          useTargetingStore.getState().cancel();
+        }
         const { isOver, winnerId } = checkGameOver(get().players);
         if (isOver) set({ isGameOver: true, winner: winnerId as PlayerId });
       },

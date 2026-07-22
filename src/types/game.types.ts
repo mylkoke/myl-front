@@ -234,6 +234,16 @@ export interface GameState {
     count: number;
     sourceName: string;
   } | null;
+  /**
+   * Decisión de "Réplica X" (Escape…): al jugar una carta con Réplica, su dueño
+   * puede pagar `cost` Oros para que el efecto se resuelva dos veces. Se
+   * sincroniza online.
+   */
+  pendingReplicaChoice: {
+    playerId: PlayerId;
+    cardName: string;
+    cost: number;
+  } | null;
   responseWindow: {
     /** Carta recién jugada (ya en su zona) que puede ser anulada */
     cardInstanceId: string;

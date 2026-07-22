@@ -23,6 +23,9 @@ interface TargetingState {
   declDestroy: { sourceInstanceId: string; playerId: PlayerId; code: string } | null;
   /** Active "buff an ally" targeting ('buff_objetivo'): pick an ally within scope. */
   buffTarget: { playerId: PlayerId; amount: number; scope: 'self' | 'opponent' | 'both' } | null;
+  /** Active "exile an ally then draw" targeting ('destierra_aliado_roba', Escape).
+   *  `remaining` = resoluciones que faltan (2 con Réplica pagada). */
+  exileAllyDraw: { playerId: PlayerId; remaining: number } | null;
   startWeaken: (sourceInstanceId: string, playerId: PlayerId) => void;
   startDestroy: (sourceInstanceId: string, playerId: PlayerId) => void;
   startSwap: (sourceInstanceId: string, playerId: PlayerId) => void;
@@ -31,10 +34,11 @@ interface TargetingState {
   startExileAny: (sourceInstanceId: string, playerId: PlayerId) => void;
   startDeclDestroy: (sourceInstanceId: string, playerId: PlayerId, code: string) => void;
   startBuffTarget: (playerId: PlayerId, amount: number, scope: 'self' | 'opponent' | 'both') => void;
+  startExileAllyDraw: (playerId: PlayerId, remaining: number) => void;
   cancel: () => void;
 }
 
-const NONE = { weaken: null, destroy: null, swap: null, equip: null, destroyAny: null, exileAny: null, declDestroy: null, buffTarget: null };
+const NONE = { weaken: null, destroy: null, swap: null, equip: null, destroyAny: null, exileAny: null, declDestroy: null, buffTarget: null, exileAllyDraw: null };
 
 export const useTargetingStore = create<TargetingState>((set) => ({
   ...NONE,
@@ -53,5 +57,6 @@ export const useTargetingStore = create<TargetingState>((set) => ({
   startDeclDestroy: (sourceInstanceId, playerId, code) =>
     set({ ...NONE, declDestroy: { sourceInstanceId, playerId, code } }),
   startBuffTarget: (playerId, amount, scope) => set({ ...NONE, buffTarget: { playerId, amount, scope } }),
+  startExileAllyDraw: (playerId, remaining) => set({ ...NONE, exileAllyDraw: { playerId, remaining } }),
   cancel: () => set({ ...NONE }),
 }));

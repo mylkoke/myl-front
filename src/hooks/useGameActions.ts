@@ -50,6 +50,8 @@ export function useGameActions() {
   const resolveAnnulRecover = useGameStore((s) => s.resolveAnnulRecover);
   const resolveSelfRegroup = useGameStore((s) => s.resolveSelfRegroup);
   const resolveMillChoice = useGameStore((s) => s.resolveMillChoice);
+  const resolveReplicaChoice = useGameStore((s) => s.resolveReplicaChoice);
+  const exileAllyDrawTarget = useGameStore((s) => s.exileAllyDrawTarget);
   const equipWeaponFromZone = useGameStore((s) => s.equipWeaponFromZone);
   const passResponse = useGameStore((s) => s.passResponse);
   const closeResponseWindow = useGameStore((s) => s.closeResponseWindow);
@@ -154,6 +156,8 @@ export function useGameActions() {
     resolveAnnulRecover: ownerGated<[boolean]>(resolveAnnulRecover),
     resolveSelfRegroup: ownerGated<[boolean]>(resolveSelfRegroup),
     resolveMillChoice: ownerGated<[PlayerId]>(resolveMillChoice),
+    resolveReplicaChoice: ownerGated<[boolean]>(resolveReplicaChoice),
+    exileAllyDrawTarget: guarded(exileAllyDrawTarget),
     swapControl: ownerGated<[string, string, PlayerId]>(swapControl),
     passResponse: ownerGated<[]>(passResponse),
     closeResponseWindow: () => {
